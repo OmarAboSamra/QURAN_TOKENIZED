@@ -1,0 +1,49 @@
+# Core Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-dotenv==1.0.0
+
+# Database
+sqlalchemy==2.0.25
+alembic==1.13.1
+psycopg2-binary==2.9.9  # PostgreSQL
+aiosqlite==0.19.0  # SQLite async support
+asyncpg==0.29.0  # Async PostgreSQL driver
+
+# Caching & Background Tasks
+redis==5.0.1
+celery==5.3.4
+aioredis==2.0.1
+
+# Data Processing
+pandas==2.1.4
+pyarrow==14.0.2  # Parquet support
+arabic-reshaper==3.0.0  # Arabic text processing
+python-bidi==0.4.2  # Bidirectional text support
+
+# HTTP Client for API calls
+httpx==0.26.0
+aiohttp==3.9.1
+
+# Validation
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Logging & Monitoring
+structlog==24.1.0
+prometheus-client==0.19.0
+prometheus-fastapi-instrumentator==6.1.0
+
+# Testing & Quality
+pytest==7.4.3
+pytest-asyncio==0.23.3
+pytest-cov==4.1.0
+black==24.1.1
+isort==5.13.2
+flake8==7.0.0
+mypy==1.8.0
+
+# Utilities
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0  # JWT tokens
+slowapi==0.1.9  # Rate limiting

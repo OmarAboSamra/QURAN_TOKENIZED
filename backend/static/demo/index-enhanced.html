@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تحليل القرآن الكريم - Qur'an Analysis</title>
+    
+    <!-- Google Fonts - Arabic Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Scheherazade+New:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'arabic': ['Amiri', 'Scheherazade New', 'serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        * {
+            font-family: 'Amiri', 'Scheherazade New', serif;
+        }
+        
+        .arabic-text {
+            font-size: 1.5rem;
+            line-height: 2.5rem;
+            font-weight: 400;
+        }
+        
+        .root-badge {
+            transition: all 0.2s;
+        }
+        
+        .root-badge:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        
+        .verse-container {
+            border-right: 4px solid #10b981;
+            background: linear-gradient(to left, #f0fdf4, #ffffff);
+        }
+        
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #10b981;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+
+        select option {
+            direction: rtl;
+            text-align: right;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // ============================================
+        // Sura Metadata (114 suras)
+        // ============================================
+        const SURA_DATA = [
+            { number: 1, nameAr: "الفاتحة", nameEn: "Al-Fatiha", verses: 7 },
+            { number: 2, nameAr: "البقرة", nameEn: "Al-Baqarah", verses: 286 },
+            { number: 3, nameAr: "آل عمران", nameEn: "Aal-E-Imran", verses: 200 },
+            { number: 4, nameAr: "النساء", nameEn: "An-Nisa", verses: 176 },
+            { number: 5, nameAr: "المائدة", nameEn: "Al-Ma'idah", verses: 120 },
+            { number: 6, nameAr: "الأنعام", nameEn: "Al-An'am", verses: 165 },
+            { number: 7, nameAr: "الأعراف", nameEn: "Al-A'raf", verses: 206 },
+            { number: 8, nameAr: "الأنفال", nameEn: "Al-Anfal", verses: 75 },
+            { number: 9, nameAr: "التوبة", nameEn: "At-Tawbah", verses: 129 },
+            { number: 10, nameAr: "يونس", nameEn: "Yunus", verses: 109 },
+            { number: 11, nameAr: "هود", nameEn: "Hud", verses: 123 },
+            { number: 12, nameAr: "يوسف", nameEn: "Yusuf", verses: 111 },
+            { number: 13, nameAr: "الرعد", nameEn: "Ar-Ra'd", verses: 43 },
+            { number: 14, nameAr: "إبراهيم", nameEn: "Ibrahim", verses: 52 },
+            { number: 15, nameAr: "الحجر", nameEn: "Al-Hijr", verses: 99 },
+            { number: 16, nameAr: "النحل", nameEn: "An-Nahl", verses: 128 },
+            { number: 17, nameAr: "الإسراء", nameEn: "Al-Isra", verses: 111 },
+            { number: 18, nameAr: "الكهف", nameEn: "Al-Kahf", verses: 110 },
+            { number: 19, nameAr: "مريم", nameEn: "Maryam", verses: 98 },
+            { number: 20, nameAr: "طه", nameEn: "Ta-Ha", verses: 135 },
+            { number: 21, nameAr: "الأنبياء", nameEn: "Al-Anbiya", verses: 112 },
+            { number: 22, nameAr: "الحج", nameEn: "Al-Hajj", verses: 78 },
+            { number: 23, nameAr: "المؤمنون", nameEn: "Al-Mu'minun", verses: 118 },
+            { number: 24, nameAr: "النور", nameEn: "An-Nur", verses: 64 },
+            { number: 25, nameAr: "الفرقان", nameEn: "Al-Furqan", verses: 77 },
+            { number: 26, nameAr: "الشعراء", nameEn: "Ash-Shu'ara", verses: 227 },
+            { number: 27, nameAr: "النمل", nameEn: "An-Naml", verses: 93 },
+            { number: 28, nameAr: "القصص", nameEn: "Al-Qasas", verses: 88 },
+            { number: 29, nameAr: "العنكبوت", nameEn: "Al-Ankabut", verses: 69 },
+            { number: 30, nameAr: "الروم", nameEn: "Ar-Rum", verses: 60 },
+            { number: 31, nameAr: "لقمان", nameEn: "Luqman", verses: 34 },
+            { number: 32, nameAr: "السجدة", nameEn: "As-Sajdah", verses: 30 },
+            { number: 33, nameAr: "الأحزاب", nameEn: "Al-Ahzab", verses: 73 },
+            { number: 34, nameAr: "سبأ", nameEn: "Saba", verses: 54 },
+            { number: 35, nameAr: "فاطر", nameEn: "Fatir", verses: 45 },
+            { number: 36, nameAr: "يس", nameEn: "Ya-Sin", verses: 83 },
+            { number: 37, nameAr: "الصافات", nameEn: "As-Saffat", verses: 182 },
+            { number: 38, nameAr: "ص", nameEn: "Sad", verses: 88 },
+            { number: 39, nameAr: "الزمر", nameEn: "Az-Zumar", verses: 75 },
+            { number: 40, nameAr: "غافر", nameEn: "Ghafir", verses: 85 },
+            { number: 41, nameAr: "فصلت", nameEn: "Fussilat", verses: 54 },
+            { number: 42, nameAr: "الشورى", nameEn: "Ash-Shura", verses: 53 },
+            { number: 43, nameAr: "الزخرف", nameEn: "Az-Zukhruf", verses: 89 },
+            { number: 44, nameAr: "الدخان", nameEn: "Ad-Dukhan", verses: 59 },
+            { number: 45, nameAr: "الجاثية", nameEn: "Al-Jathiyah", verses: 37 },
+            { number: 46, nameAr: "الأحقاف", nameEn: "Al-Ahqaf", verses: 35 },
+            { number: 47, nameAr: "محمد", nameEn: "Muhammad", verses: 38 },
+            { number: 48, nameAr: "الفتح", nameEn: "Al-Fath", verses: 29 },
+            { number: 49, nameAr: "الحجرات", nameEn: "Al-Hujurat", verses: 18 },
+            { number: 50, nameAr: "ق", nameEn: "Qaf", verses: 45 },
+            { number: 51, nameAr: "الذاريات", nameEn: "Adh-Dhariyat", verses: 60 },
+            { number: 52, nameAr: "الطور", nameEn: "At-Tur", verses: 49 },
+            { number: 53, nameAr: "النجم", nameEn: "An-Najm", verses: 62 },
+            { number: 54, nameAr: "القمر", nameEn: "Al-Qamar", verses: 55 },
+            { number: 55, nameAr: "الرحمن", nameEn: "Ar-Rahman", verses: 78 },
+            { number: 56, nameAr: "الواقعة", nameEn: "Al-Waqi'ah", verses: 96 },
+            { number: 57, nameAr: "الحديد", nameEn: "Al-Hadid", verses: 29 },
+            { number: 58, nameAr: "المجادلة", nameEn: "Al-Mujadila", verses: 22 },
+            { number: 59, nameAr: "الحشر", nameEn: "Al-Hashr", verses: 24 },
+            { number: 60, nameAr: "الممتحنة", nameEn: "Al-Mumtahanah", verses: 13 },
+            { number: 61, nameAr: "الصف", nameEn: "As-Saf", verses: 14 },
+            { number: 62, nameAr: "الجمعة", nameEn: "Al-Jumu'ah", verses: 11 },
+            { number: 63, nameAr: "المنافقون", nameEn: "Al-Munafiqun", verses: 11 },
+            { number: 64, nameAr: "التغابن", nameEn: "At-Taghabun", verses: 18 },
+            { number: 65, nameAr: "الطلاق", nameEn: "At-Talaq", verses: 12 },
+            { number: 66, nameAr: "التحريم", nameEn: "At-Tahrim", verses: 12 },
+            { number: 67, nameAr: "الملك", nameEn: "Al-Mulk", verses: 30 },
+            { number: 68, nameAr: "القلم", nameEn: "Al-Qalam", verses: 52 },
+            { number: 69, nameAr: "الحاقة", nameEn: "Al-Haqqah", verses: 52 },
+            { number: 70, nameAr: "المعارج", nameEn: "Al-Ma'arij", verses: 44 },
+            { number: 71, nameAr: "نوح", nameEn: "Nuh", verses: 28 },
+            { number: 72, nameAr: "الجن", nameEn: "Al-Jinn", verses: 28 },
+            { number: 73, nameAr: "المزمل", nameEn: "Al-Muzzammil", verses: 20 },
+            { number: 74, nameAr: "المدثر", nameEn: "Al-Muddathir", verses: 56 },
+            { number: 75, nameAr: "القيامة", nameEn: "Al-Qiyamah", verses: 40 },
+            { number: 76, nameAr: "الإنسان", nameEn: "Al-Insan", verses: 31 },
+            { number: 77, nameAr: "المرسلات", nameEn: "Al-Mursalat", verses: 50 },
+            { number: 78, nameAr: "النبأ", nameEn: "An-Naba", verses: 40 },
+            { number: 79, nameAr: "النازعات", nameEn: "An-Nazi'at", verses: 46 },
+            { number: 80, nameAr: "عبس", nameEn: "Abasa", verses: 42 },
+            { number: 81, nameAr: "التكوير", nameEn: "At-Takwir", verses: 29 },
+            { number: 82, nameAr: "الانفطار", nameEn: "Al-Infitar", verses: 19 },
+            { number: 83, nameAr: "المطففين", nameEn: "Al-Mutaffifin", verses: 36 },
+            { number: 84, nameAr: "الانشقاق", nameEn: "Al-Inshiqaq", verses: 25 },
+            { number: 85, nameAr: "البروج", nameEn: "Al-Buruj", verses: 22 },
+            { number: 86, nameAr: "الطارق", nameEn: "At-Tariq", verses: 17 },
+            { number: 87, nameAr: "الأعلى", nameEn: "Al-A'la", verses: 19 },
+            { number: 88, nameAr: "الغاشية", nameEn: "Al-Ghashiyah", verses: 26 },
+            { number: 89, nameAr: "الفجر", nameEn: "Al-Fajr", verses: 30 },
+            { number: 90, nameAr: "البلد", nameEn: "Al-Balad", verses: 20 },
+            { number: 91, nameAr: "الشمس", nameEn: "Ash-Shams", verses: 15 },
+            { number: 92, nameAr: "الليل", nameEn: "Al-Layl", verses: 21 },
+            { number: 93, nameAr: "الضحى", nameEn: "Ad-Duhaa", verses: 11 },
+            { number: 94, nameAr: "الشرح", nameEn: "Ash-Sharh", verses: 8 },
+            { number: 95, nameAr: "التين", nameEn: "At-Tin", verses: 8 },
+            { number: 96, nameAr: "العلق", nameEn: "Al-Alaq", verses: 19 },
+            { number: 97, nameAr: "القدر", nameEn: "Al-Qadr", verses: 5 },
+            { number: 98, nameAr: "البينة", nameEn: "Al-Bayyinah", verses: 8 },
+            { number: 99, nameAr: "الزلزلة", nameEn: "Az-Zalzalah", verses: 8 },
+            { number: 100, nameAr: "العاديات", nameEn: "Al-Adiyat", verses: 11 },
+            { number: 101, nameAr: "القارعة", nameEn: "Al-Qari'ah", verses: 11 },
+            { number: 102, nameAr: "التكاثر", nameEn: "At-Takathur", verses: 8 },
+            { number: 103, nameAr: "العصر", nameEn: "Al-Asr", verses: 3 },
+            { number: 104, nameAr: "الهمزة", nameEn: "Al-Humazah", verses: 9 },
+            { number: 105, nameAr: "الفيل", nameEn: "Al-Fil", verses: 5 },
+            { number: 106, nameAr: "قريش", nameEn: "Quraysh", verses: 4 },
+            { number: 107, nameAr: "الماعون", nameEn: "Al-Ma'un", verses: 7 },
+            { number: 108, nameAr: "الكوثر", nameEn: "Al-Kawthar", verses: 3 },
+            { number: 109, nameAr: "الكافرون", nameEn: "Al-Kafirun", verses: 6 },
+            { number: 110, nameAr: "النصر", nameEn: "An-Nasr", verses: 3 },
+            { number: 111, nameAr: "المسد", nameEn: "Al-Masad", verses: 5 },
+            { number: 112, nameAr: "الإخلاص", nameEn: "Al-Ikhlas", verses: 4 },
+            { number: 113, nameAr: "الفلق", nameEn: "Al-Falaq", verses: 5 },
+            { number: 114, nameAr: "الناس", nameEn: "An-Nas", verses: 6 }
+        ];
+
+        // ============================================
+        // URL Utilities
+        // ============================================
+        function getQueryParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                sura: parseInt(params.get('sura')) || 1,
+                page: parseInt(params.get('page')) || 1,
+            };
+        }
+
+        function updateURL(sura, page) {
+            const url = new URL(window.location);
+            url.searchParams.set('sura', sura);
+            url.searchParams.set('page', page);
+            window.history.pushState({}, '', url);
+        }
+
+        // ============================================
+        // Header Component with Navigation
+        // ============================================
+        function NavigationHeader({ currentSura, currentPage, onSuraChange, availableAyahs, onJumpToAyah }) {
+            const suraInfo = SURA_DATA.find(s => s.number === currentSura);
+
+            return (
+                <header className="bg-gradient-to-l from-green-600 to-green-700 text-white shadow-lg sticky top-0 z-50">
+                    <div className="container mx-auto px-4 py-4">
+                        {/* Title Row */}
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="text-right">
+                                <h1 className="text-3xl font-bold arabic-text">تحليل القرآن الكريم</h1>
+                                <p className="text-green-100 text-sm mt-1">Qur'an Word-by-Word Analysis</p>
+                            </div>
+                            <div className="text-4xl">📖</div>
+                        </div>
+
+                        {/* Navigation Controls Row */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {/* Sura Selector */}
+                            <div>
+                                <label className="block text-xs text-green-100 mb-1 text-right">اختر السورة</label>
+                                <select
+                                    value={currentSura}
+                                    onChange={(e) => onSuraChange(parseInt(e.target.value))}
+                                    className="w-full px-3 py-2 bg-white text-gray-800 rounded-lg text-right arabic-text focus:ring-2 focus:ring-green-300 cursor-pointer"
+                                    dir="rtl"
+                                >
+                                    {SURA_DATA.map(sura => (
+                                        <option key={sura.number} value={sura.number}>
+                                            {sura.number}. {sura.nameAr} - {sura.nameEn}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Jump to Ayah */}
+                            <div>
+                                <label className="block text-xs text-green-100 mb-1 text-right">انتقل إلى آية</label>
+                                <select
+                                    onChange={(e) => onJumpToAyah(parseInt(e.target.value))}
+                                    className="w-full px-3 py-2 bg-white text-gray-800 rounded-lg text-right arabic-text focus:ring-2 focus:ring-green-300 cursor-pointer"
+                                    dir="rtl"
+                                    disabled={availableAyahs.length === 0}
+                                >
+                                    <option value="">اختر آية...</option>
+                                    {availableAyahs.map(aya => (
+                                        <option key={aya} value={aya}>
+                                            آية {aya}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Current Sura Info */}
+                            <div className="flex items-end justify-end">
+                                <div className="text-right bg-green-800 bg-opacity-40 rounded-lg px-4 py-2">
+                                    <div className="text-lg font-bold arabic-text">
+                                        سورة {suraInfo?.nameAr} ({suraInfo?.number})
+                                    </div>
+                                    <div className="text-xs text-green-100">
+                                        الصفحة {currentPage}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+            );
+        }
+
+        // ============================================
+        // Search Bar Component
+        // ============================================
+        function SearchBar({ searchTerm, onSearchChange, resultCount }) {
+            const [localSearch, setLocalSearch] = useState(searchTerm);
+
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    onSearchChange(localSearch);
+                }, 300);
+                return () => clearTimeout(timer);
+            }, [localSearch, onSearchChange]);
+
+            return (
+                <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+                    <div className="flex items-center gap-4">
+                        <div className="flex-1">
+                            <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-2 text-right">
+                                🔍 البحث في الصفحة الحالية
+                            </label>
+                            <input
+                                id="search"
+                                type="text"
+                                value={localSearch}
+                                onChange={(e) => setLocalSearch(e.target.value)}
+                                placeholder="ابحث في النص العربي أو الجذور..."
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-right arabic-text focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                dir="rtl"
+                            />
+                        </div>
+                        {searchTerm && (
+                            <div className="text-sm text-gray-600 mt-6">
+                                {resultCount} نتيجة
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // Pagination Component
+        // ============================================
+        function Pagination({ currentPage, totalPages, onPageChange }) {
+            if (totalPages <= 1) return null;
+
+            const canGoPrev = currentPage > 1;
+            const canGoNext = currentPage < totalPages;
+
+            return (
+                <div className="bg-white rounded-lg shadow-md p-4 flex items-center justify-between">
+                    <button
+                        onClick={() => onPageChange(currentPage + 1)}
+                        disabled={!canGoNext}
+                        className={`px-4 py-2 rounded-lg font-semibold ${
+                            canGoNext
+                                ? 'bg-green-600 text-white hover:bg-green-700 cursor-pointer'
+                                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        }`}
+                    >
+                        التالية ◀
+                    </button>
+
+                    <div className="text-center">
+                        <div className="text-lg font-bold text-gray-800">
+                            الصفحة {currentPage} من {totalPages}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                            {totalPages} صفحات إجمالاً
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={() => onPageChange(currentPage - 1)}
+                        disabled={!canGoPrev}
+                        className={`px-4 py-2 rounded-lg font-semibold ${
+                            canGoPrev
+                                ? 'bg-green-600 text-white hover:bg-green-700 cursor-pointer'
+                                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        }`}
+                    >
+                        ▶ السابقة
+                    </button>
+                </div>
+            );
+        }
+
+        // ============================================
+        // Verse Group Component
+        // ============================================
+        function VerseGroup({ verse, tokens, onRootClick }) {
+            const verseText = tokens.map(t => t.text_ar).join(' ');
+            
+            return (
+                <div id={`ayah-${verse}`} className="verse-container rounded-lg p-6 mb-6 shadow-md scroll-mt-24">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="bg-green-600 text-white px-4 py-2 rounded-full text-sm font-bold">
+                            آية {verse}
+                        </div>
+                        <div className="text-gray-500 text-sm">
+                            {tokens.length} كلمات
+                        </div>
+                    </div>
+                    
+                    <div className="arabic-text text-gray-800 mb-4 leading-loose text-right">
+                        {verseText}
+                    </div>
+                    
+                    <div className="border-t pt-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {tokens.map((token) => (
+                                <TokenCard 
+                                    key={token.id} 
+                                    token={token} 
+                                    onRootClick={onRootClick}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // Token Card Component
+        // ============================================
+        function TokenCard({ token, onRootClick }) {
+            return (
+                <div className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-500">#{token.position + 1}</span>
+                        <span className="text-2xl arabic-text font-bold text-gray-800">
+                            {token.text_ar}
+                        </span>
+                    </div>
+                    
+                    <div className="text-right">
+                        <div className="text-sm text-gray-600 mb-2">
+                            {token.normalized}
+                        </div>
+                        
+                        {token.root ? (
+                            <button
+                                onClick={() => onRootClick(token.root)}
+                                className="root-badge bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold cursor-pointer hover:bg-green-200"
+                            >
+                                🌱 {token.root}
+                            </button>
+                        ) : (
+                            <span className="bg-gray-100 text-gray-500 px-3 py-1 rounded-full text-xs">
+                                جذر غير محدد
+                            </span>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // Root Modal Component
+        // ============================================
+        function RootModal({ root, isOpen, onClose }) {
+            const [tokens, setTokens] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                if (isOpen && root) {
+                    setLoading(true);
+                    setError(null);
+                    
+                    fetch(`/quran/root/${encodeURIComponent(root)}?page_size=100`)
+                        .then(res => res.json())
+                        .then(data => {
+                            setTokens(data.tokens || []);
+                            setLoading(false);
+                        })
+                        .catch(err => {
+                            setError('فشل تحميل البيانات');
+                            setLoading(false);
+                        });
+                }
+            }, [isOpen, root]);
+
+            if (!isOpen) return null;
+
+            const verseGroups = tokens.reduce((acc, token) => {
+                const key = `${token.sura}:${token.aya}`;
+                if (!acc[key]) {
+                    acc[key] = [];
+                }
+                acc[key].push(token);
+                return acc;
+            }, {});
+
+            return (
+                <div 
+                    className="fixed inset-0 modal-backdrop flex items-center justify-center z-50 p-4"
+                    onClick={onClose}
+                >
+                    <div 
+                        className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="bg-gradient-to-l from-green-600 to-green-700 text-white p-6">
+                            <div className="flex items-center justify-between">
+                                <button
+                                    onClick={onClose}
+                                    className="text-white hover:text-gray-200 text-2xl font-bold"
+                                >
+                                    ×
+                                </button>
+                                <h2 className="text-2xl font-bold arabic-text">
+                                    الكلمات من جذر: {root}
+                                </h2>
+                            </div>
+                            <p className="text-green-100 text-sm mt-2">
+                                {tokens.length} كلمة في القرآن
+                            </p>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto max-h-[70vh]">
+                            {loading ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <div className="loading-spinner"></div>
+                                </div>
+                            ) : error ? (
+                                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-center">
+                                    {error}
+                                </div>
+                            ) : tokens.length === 0 ? (
+                                <div className="text-center text-gray-500 py-12">
+                                    لم يتم العثور على كلمات لهذا الجذر
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {Object.entries(verseGroups).map(([verse, verseTokens]) => (
+                                        <div key={verse} className="bg-gray-50 rounded-lg p-4">
+                                            <div className="text-sm font-bold text-green-700 mb-2">
+                                                الآية {verse}
+                                            </div>
+                                            <div className="arabic-text text-gray-800 text-right">
+                                                {verseTokens.map((t, i) => (
+                                                    <span key={i} className={t.root === root ? 'bg-yellow-200 px-1' : ''}>
+                                                        {t.text_ar}{' '}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ============================================
+        // Main App Component
+        // ============================================
+        function App() {
+            const [tokens, setTokens] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedRoot, setSelectedRoot] = useState(null);
+            const [modalOpen, setModalOpen] = useState(false);
+
+            // URL-driven state
+            const [currentSura, setCurrentSura] = useState(1);
+            const [currentPage, setCurrentPage] = useState(1);
+            const [totalPages, setTotalPages] = useState(1);
+            const [suraStats, setSuraStats] = useState(null);
+
+            const PAGE_SIZE = 1000;
+
+            // Initialize from URL on mount
+            useEffect(() => {
+                const params = getQueryParams();
+                setCurrentSura(params.sura);
+                setCurrentPage(params.page);
+            }, []);
+
+            // Fetch data when sura or page changes
+            useEffect(() => {
+                const fetchData = async () => {
+                    setLoading(true);
+                    setError(null);
+                    setSearchTerm('');
+
+                    try {
+                        // Fetch stats for this sura to calculate total pages
+                        const statsRes = await fetch(`/quran/stats?sura=${currentSura}`);
+                        const stats = await statsRes.json();
+                        setSuraStats(stats);
+                        
+                        const pages = Math.ceil(stats.total_tokens / PAGE_SIZE);
+                        setTotalPages(pages);
+
+                        // Clamp page if out of range
+                        let validPage = currentPage;
+                        if (currentPage > pages) {
+                            validPage = pages || 1;
+                            setCurrentPage(validPage);
+                        }
+
+                        // Fetch tokens for current page
+                        const tokensRes = await fetch(
+                            `/quran/tokens?sura=${currentSura}&page=${validPage}&page_size=${PAGE_SIZE}`
+                        );
+                        const tokensData = await tokensRes.json();
+                        
+                        setTokens(tokensData.tokens || []);
+                        setLoading(false);
+                    } catch (err) {
+                        setError('فشل تحميل البيانات. الرجاء المحاولة مرة أخرى.');
+                        setLoading(false);
+                    }
+                };
+
+                fetchData();
+            }, [currentSura, currentPage]);
+
+            // Filter tokens based on search
+            const filteredTokens = useMemo(() => {
+                if (!searchTerm) return tokens;
+                const term = searchTerm.toLowerCase();
+                return tokens.filter(token =>
+                    token.text_ar.includes(term) ||
+                    token.normalized.includes(term) ||
+                    (token.root && token.root.includes(term))
+                );
+            }, [tokens, searchTerm]);
+
+            // Group tokens by verse
+            const verseGroups = useMemo(() => {
+                const groups = {};
+                filteredTokens.forEach(token => {
+                    if (!groups[token.aya]) {
+                        groups[token.aya] = [];
+                    }
+                    groups[token.aya].push(token);
+                });
+                return groups;
+            }, [filteredTokens]);
+
+            // Get available ayahs for jump dropdown
+            const availableAyahs = useMemo(() => {
+                return Object.keys(verseGroups).map(a => parseInt(a)).sort((a, b) => a - b);
+            }, [verseGroups]);
+
+            // Handlers
+            const handleSuraChange = (sura) => {
+                setCurrentSura(sura);
+                setCurrentPage(1);
+                updateURL(sura, 1);
+            };
+
+            const handlePageChange = (page) => {
+                const validPage = Math.max(1, Math.min(page, totalPages));
+                setCurrentPage(validPage);
+                updateURL(currentSura, validPage);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            const handleJumpToAyah = (ayah) => {
+                if (!ayah) return;
+                const element = document.getElementById(`ayah-${ayah}`);
+                if (element) {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Flash highlight
+                    element.style.backgroundColor = '#fef3c7';
+                    setTimeout(() => {
+                        element.style.backgroundColor = '';
+                    }, 1000);
+                }
+            };
+
+            const handleRootClick = (root) => {
+                setSelectedRoot(root);
+                setModalOpen(true);
+            };
+
+            const handleRetry = () => {
+                setCurrentPage(1);
+                updateURL(currentSura, 1);
+                window.location.reload();
+            };
+
+            // Get ayah range for current page
+            const ayahRange = useMemo(() => {
+                if (availableAyahs.length === 0) return '';
+                const min = Math.min(...availableAyahs);
+                const max = Math.max(...availableAyahs);
+                return min === max ? `آية ${min}` : `الآيات ${min}–${max}`;
+            }, [availableAyahs]);
+
+            const suraInfo = SURA_DATA.find(s => s.number === currentSura);
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen">
+                        <NavigationHeader 
+                            currentSura={currentSura}
+                            currentPage={currentPage}
+                            onSuraChange={handleSuraChange}
+                            availableAyahs={[]}
+                            onJumpToAyah={handleJumpToAyah}
+                        />
+                        <div className="flex items-center justify-center py-20">
+                            <div className="text-center">
+                                <div className="loading-spinner mx-auto mb-4"></div>
+                                <p className="text-gray-600 arabic-text text-lg">
+                                    جارٍ تحميل بيانات السورة...
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="min-h-screen">
+                        <NavigationHeader 
+                            currentSura={currentSura}
+                            currentPage={currentPage}
+                            onSuraChange={handleSuraChange}
+                            availableAyahs={[]}
+                            onJumpToAyah={handleJumpToAyah}
+                        />
+                        <div className="flex items-center justify-center p-4 py-20">
+                            <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg max-w-md text-center">
+                                <p className="font-bold mb-2">خطأ</p>
+                                <p className="mb-4">{error}</p>
+                                <button
+                                    onClick={handleRetry}
+                                    className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+                                >
+                                    إعادة المحاولة
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen pb-8">
+                    <NavigationHeader 
+                        currentSura={currentSura}
+                        currentPage={currentPage}
+                        onSuraChange={handleSuraChange}
+                        availableAyahs={availableAyahs}
+                        onJumpToAyah={handleJumpToAyah}
+                    />
+                    
+                    <main className="container mx-auto px-4 py-8">
+                        {/* Info Bar */}
+                        {suraStats && (
+                            <div className="bg-gradient-to-l from-green-50 to-white rounded-lg shadow-md p-4 mb-6 border-r-4 border-green-600">
+                                <div className="flex items-center justify-between text-right">
+                                    <div className="grid grid-cols-3 gap-4 text-center flex-1">
+                                        <div>
+                                            <div className="text-2xl font-bold text-green-600">{suraStats.total_tokens}</div>
+                                            <div className="text-xs text-gray-600">كلمة</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-2xl font-bold text-green-600">{suraStats.total_verses}</div>
+                                            <div className="text-xs text-gray-600">آية</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-2xl font-bold text-green-600">{suraStats.total_roots}</div>
+                                            <div className="text-xs text-gray-600">جذر</div>
+                                        </div>
+                                    </div>
+                                    <div className="text-right mr-6">
+                                        <div className="text-xl font-bold text-gray-800 arabic-text">
+                                            سورة {suraInfo?.nameAr} ({suraInfo?.number})
+                                        </div>
+                                        <div className="text-sm text-gray-600">
+                                            الصفحة {currentPage} من {totalPages} – {ayahRange}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <SearchBar 
+                            searchTerm={searchTerm}
+                            onSearchChange={setSearchTerm}
+                            resultCount={filteredTokens.length}
+                        />
+
+                        <Pagination 
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={handlePageChange}
+                        />
+
+                        <div className="my-6">
+                            {Object.keys(verseGroups).length === 0 ? (
+                                <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-6 py-4 rounded-lg text-center">
+                                    لم يتم العثور على نتائج
+                                </div>
+                            ) : (
+                                Object.entries(verseGroups)
+                                    .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                                    .map(([aya, verseTokens]) => (
+                                        <VerseGroup
+                                            key={aya}
+                                            verse={aya}
+                                            tokens={verseTokens}
+                                            onRootClick={handleRootClick}
+                                        />
+                                    ))
+                            )}
+                        </div>
+
+                        <Pagination 
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={handlePageChange}
+                        />
+                    </main>
+
+                    <RootModal
+                        root={selectedRoot}
+                        isOpen={modalOpen}
+                        onClose={() => setModalOpen(false)}
+                    />
+                </div>
+            );
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

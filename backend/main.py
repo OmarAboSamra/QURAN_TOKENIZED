@@ -43,11 +43,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     
     try:
         await init_db_async()
-        print("✓ Database initialized")
+        print("[OK] Database initialized")
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
     
-    print(f"✓ Server starting on http://{settings.api_host}:{settings.api_port}")
+    print(f"[OK] Server starting on http://{settings.api_host}:{settings.api_port}")
     print("=" * 60)
     
     yield

@@ -22,9 +22,9 @@ Write-Host "Checking Redis connection..." -ForegroundColor Yellow
 try {
     $redisTest = Test-NetConnection -ComputerName localhost -Port 6379 -WarningAction SilentlyContinue
     if ($redisTest.TcpTestSucceeded) {
-        Write-Host "✓ Redis is running on localhost:6379" -ForegroundColor Green
+        Write-Host "[OK] Redis is running on localhost:6379" -ForegroundColor Green
     } else {
-        Write-Host "✗ Redis is NOT running on localhost:6379" -ForegroundColor Red
+        Write-Host "[ERROR] Redis is NOT running on localhost:6379" -ForegroundColor Red
         Write-Host ""
         Write-Host "Please start Redis first:" -ForegroundColor Yellow
         Write-Host "  Option 1: docker run -d -p 6379:6379 redis:7-alpine" -ForegroundColor Cyan
@@ -33,7 +33,7 @@ try {
         exit 1
     }
 } catch {
-    Write-Host "✗ Could not check Redis connection" -ForegroundColor Red
+    Write-Host "[ERROR] Could not check Redis connection" -ForegroundColor Red
     Write-Host "Please ensure Redis is running on localhost:6379" -ForegroundColor Yellow
     exit 1
 }

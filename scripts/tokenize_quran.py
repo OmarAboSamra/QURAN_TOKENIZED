@@ -58,7 +58,7 @@ def main() -> None:
     
     # Check if input file exists
     if not input_path.exists():
-        print(f"❌ Error: Input file not found: {input_path}")
+        print(f"[ERROR] Input file not found: {input_path}")
         print()
         print("Please provide a Qur'an text file with format:")
         print("  sura|aya|text")
@@ -80,8 +80,8 @@ def main() -> None:
         tokens = tokenizer.tokenize_file(input_path, output_path)
         print()
         print("=" * 60)
-        print(f"✓ Successfully tokenized {len(tokens)} words")
-        print(f"✓ CSV output written to: {output_path}")
+        print(f"[OK] Successfully tokenized {len(tokens)} words")
+        print(f"[OK] CSV output written to: {output_path}")
         print("=" * 60)
         
         # Display statistics
@@ -120,7 +120,7 @@ def main() -> None:
                     session.add(db_token)
                 
                 session.commit()
-                print(f"✓ Saved {len(tokens)} tokens to database")
+                print(f"[OK] Saved {len(tokens)} tokens to database")
         
         print()
         print("Next steps:")
@@ -130,10 +130,10 @@ def main() -> None:
         print("  4. Start API server: python backend/main.py")
         
     except FileNotFoundError as e:
-        print(f"❌ Error: {e}")
+        print(f"[ERROR] {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"❌ Error during tokenization: {e}")
+        print(f"[ERROR] Error during tokenization: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

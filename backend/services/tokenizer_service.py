@@ -219,4 +219,4 @@ class TokenizerService:
                     token.normalized,
                 ])
         
-        print(f"✓ Wrote {len(tokens)} tokens to {output_path}")
+        print(f"[OK] Wrote {len(tokens)} tokens to {output_path}")

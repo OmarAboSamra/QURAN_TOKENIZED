@@ -1,12 +1,47 @@
 """ORM model for Arabic roots."""
+import json
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Any
 
-from sqlalchemy import DateTime, Index, Integer, String, Text, func
+from sqlalchemy import DateTime, Index, Integer, String, Text, TypeDecorator, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.db import Base
+from backend.config import get_settings
+
+_settings = get_settings()
+_is_postgres = _settings.database_url.startswith(("postgresql://", "postgresql+"))
+
+
+class JSONType(TypeDecorator):
+    """JSON type that works with both PostgreSQL JSONB and SQLite Text."""
+    
+    impl = Text
+    cache_ok = True
+    
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            return dialect.type_descriptor(JSONB())
+        else:
+            return dialect.type_descriptor(Text())
+    
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == 'postgresql':
+            return value
+        return json.dumps(value)
+    
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        if dialect.name == 'postgresql':
+            return value
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
+
 
 if TYPE_CHECKING:
     from backend.models.token_model import Token
@@ -44,7 +79,7 @@ class Root(Base):
     # Compressed list of token IDs (legacy - prefer using relationship)
     token_ids: Mapped[Optional[list]] = mapped_column(
         "tokens",  # Keep same column name for backward compatibility
-        JSONB if True else Text,  # JSONB for PostgreSQL, Text for SQLite
+        JSONType,
         nullable=True,
         comment="List of token IDs that share this root (legacy field)",
     )
@@ -60,7 +95,7 @@ class Root(Base):
     # Additional metadata
     metadata_: Mapped[Optional[dict]] = mapped_column(
         "metadata",  # Use different column name to avoid conflict with SQLAlchemy metadata
-        JSONB if True else Text,  # JSONB for PostgreSQL, Text for SQLite
+        JSONType,
         nullable=True,
         comment="Additional metadata (etymology, related roots, etc.)",
     )

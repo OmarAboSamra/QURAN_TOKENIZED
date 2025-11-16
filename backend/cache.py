@@ -34,7 +34,7 @@ class CacheManager:
                 )
                 # Test connection
                 await self._redis.ping()
-                print(f"✓ Redis connected: {settings.redis_url}")
+                print(f"[OK] Redis connected: {settings.redis_url}")
             except Exception as e:
                 print(f"⚠ Redis connection failed: {e}")
                 self._enabled = False

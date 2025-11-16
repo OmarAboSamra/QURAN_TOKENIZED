@@ -263,7 +263,7 @@ class RootExtractionService:
             try:
                 with open(self.cache_path, "r", encoding="utf-8") as f:
                     self.cache = json.load(f)
-                print(f"✓ Loaded cache with {len(self.cache)} entries")
+                print(f"[OK] Loaded cache with {len(self.cache)} entries")
             except Exception as e:
                 print(f"Warning: Could not load cache: {e}")
                 self.cache = {}
@@ -275,7 +275,7 @@ class RootExtractionService:
                 self.cache_path.parent.mkdir(parents=True, exist_ok=True)
                 with open(self.cache_path, "w", encoding="utf-8") as f:
                     json.dump(self.cache, f, ensure_ascii=False, indent=2)
-                print(f"✓ Saved cache with {len(self.cache)} entries")
+                print(f"[OK] Saved cache with {len(self.cache)} entries")
             except Exception as e:
                 print(f"Warning: Could not save cache: {e}")
 

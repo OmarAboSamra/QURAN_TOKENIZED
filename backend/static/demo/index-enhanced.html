@@ -226,7 +226,7 @@
         // ============================================
         // Header Component with Navigation
         // ============================================
-        function NavigationHeader({ currentSura, currentPage, onSuraChange, availableAyahs, onJumpToAyah }) {
+        function NavigationHeader({ currentSura, currentPage, onSuraChange, availableAyahs, onJumpToAyah, totalPages, onPageChange, pageRanges }) {
             const suraInfo = SURA_DATA.find(s => s.number === currentSura);
 
             return (
@@ -242,7 +242,7 @@
                         </div>
 
                         {/* Navigation Controls Row */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             {/* Sura Selector */}
                             <div>
                                 <label className="block text-xs text-green-100 mb-1 text-right">اختر السورة</label>
@@ -257,6 +257,30 @@
                                             {sura.number}. {sura.nameAr} - {sura.nameEn}
                                         </option>
                                     ))}
+                                </select>
+                            </div>
+
+                            {/* Page Selector */}
+                            <div>
+                                <label className="block text-xs text-green-100 mb-1 text-right">اختر الصفحة</label>
+                                <select
+                                    value={currentPage}
+                                    onChange={(e) => onPageChange(parseInt(e.target.value))}
+                                    className="w-full px-3 py-2 bg-white text-gray-800 rounded-lg text-right arabic-text focus:ring-2 focus:ring-green-300 cursor-pointer"
+                                    dir="rtl"
+                                    disabled={totalPages <= 1}
+                                >
+                                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                                        const range = pageRanges[page] || {};
+                                        const label = range.start && range.end 
+                                            ? `صفحة ${page} (آيات ${range.start}–${range.end})`
+                                            : `صفحة ${page}`;
+                                        return (
+                                            <option key={page} value={page}>
+                                                {label}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                             </div>
 
@@ -285,7 +309,7 @@
                                         سورة {suraInfo?.nameAr} ({suraInfo?.number})
                                     </div>
                                     <div className="text-xs text-green-100">
-                                        الصفحة {currentPage}
+                                        الصفحة {currentPage} من {totalPages}
                                     </div>
                                 </div>
                             </div>
@@ -569,6 +593,7 @@
             const [currentPage, setCurrentPage] = useState(1);
             const [totalPages, setTotalPages] = useState(1);
             const [suraStats, setSuraStats] = useState(null);
+            const [pageRanges, setPageRanges] = useState({});
 
             const PAGE_SIZE = 1000;
 
@@ -578,6 +603,42 @@
                 setCurrentSura(params.sura);
                 setCurrentPage(params.page);
             }, []);
+
+            // Fetch page ranges for all pages in current sura
+            useEffect(() => {
+                const fetchPageRanges = async () => {
+                    if (!suraStats || totalPages <= 1) return;
+                    
+                    const ranges = {};
+                    // Fetch a small sample from each page to get verse ranges
+                    const fetchPromises = Array.from({ length: totalPages }, (_, i) => i + 1).map(async (page) => {
+                        try {
+                            const res = await fetch(`/quran/tokens?sura=${currentSura}&page=${page}&page_size=10`);
+                            const data = await res.json();
+                            if (data.tokens && data.tokens.length > 0) {
+                                const ayahs = data.tokens.map(t => t.aya);
+                                const minAya = Math.min(...ayahs);
+                                
+                                // For the last token on this page, fetch last few tokens
+                                const fullPageRes = await fetch(`/quran/tokens?sura=${currentSura}&page=${page}&page_size=${PAGE_SIZE}`);
+                                const fullPageData = await fullPageRes.json();
+                                if (fullPageData.tokens && fullPageData.tokens.length > 0) {
+                                    const allAyahs = fullPageData.tokens.map(t => t.aya);
+                                    const maxAya = Math.max(...allAyahs);
+                                    ranges[page] = { start: minAya, end: maxAya };
+                                }
+                            }
+                        } catch (err) {
+                            // Silently fail for page range fetching
+                        }
+                    });
+                    
+                    await Promise.all(fetchPromises);
+                    setPageRanges(ranges);
+                };
+
+                fetchPageRanges();
+            }, [currentSura, suraStats, totalPages]);
 
             // Fetch data when sura or page changes
             useEffect(() => {
@@ -704,6 +765,9 @@
                             onSuraChange={handleSuraChange}
                             availableAyahs={[]}
                             onJumpToAyah={handleJumpToAyah}
+                            totalPages={totalPages}
+                            onPageChange={handlePageChange}
+                            pageRanges={pageRanges}
                         />
                         <div className="flex items-center justify-center py-20">
                             <div className="text-center">
@@ -726,6 +790,9 @@
                             onSuraChange={handleSuraChange}
                             availableAyahs={[]}
                             onJumpToAyah={handleJumpToAyah}
+                            totalPages={totalPages}
+                            onPageChange={handlePageChange}
+                            pageRanges={pageRanges}
                         />
                         <div className="flex items-center justify-center p-4 py-20">
                             <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg max-w-md text-center">
@@ -751,6 +818,9 @@
                         onSuraChange={handleSuraChange}
                         availableAyahs={availableAyahs}
                         onJumpToAyah={handleJumpToAyah}
+                        totalPages={totalPages}
+                        onPageChange={handlePageChange}
+                        pageRanges={pageRanges}
                     />
                     
                     <main className="container mx-auto px-4 py-8">

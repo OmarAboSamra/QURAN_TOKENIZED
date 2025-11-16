@@ -132,35 +132,42 @@ class TestDataCompleteness:
     def test_root_extraction_attempted(self, db_session: Session):
         """Verify root extraction has been attempted for both suras."""
         # Count tokens with roots in Sura 1
+        sura_1_total = db_session.query(Token).filter(Token.sura == 1).count()
         sura_1_with_roots = db_session.query(Token).filter(
             Token.sura == 1,
             Token.root.isnot(None)
         ).count()
         
         # Count tokens with roots in Sura 2  
+        sura_2_total = db_session.query(Token).filter(Token.sura == 2).count()
         sura_2_with_roots = db_session.query(Token).filter(
             Token.sura == 2,
             Token.root.isnot(None)
         ).count()
         
-        # We expect at least SOME roots (even with limited fallback dictionary)
+        # Calculate coverage
+        sura_1_coverage = (sura_1_with_roots / sura_1_total * 100) if sura_1_total > 0 else 0
+        sura_2_coverage = (sura_2_with_roots / sura_2_total * 100) if sura_2_total > 0 else 0
         total_with_roots = sura_1_with_roots + sura_2_with_roots
-        assert total_with_roots > 0, "No roots found - root extraction may not have run"
+        total_tokens = sura_1_total + sura_2_total
+        total_coverage = (total_with_roots / total_tokens * 100) if total_tokens > 0 else 0
         
-        # Get total tokens
-        total_tokens = db_session.query(Token).filter(
-            Token.sura.in_([1, 2])
-        ).count()
+        print(f"\n✓ Root extraction status:")
+        print(f"  Sura 1: {sura_1_with_roots}/{sura_1_total} ({sura_1_coverage:.1f}%)")
+        print(f"  Sura 2: {sura_2_with_roots}/{sura_2_total} ({sura_2_coverage:.1f}%)")
+        print(f"  Total: {total_with_roots}/{total_tokens} ({total_coverage:.1f}%)")
         
-        coverage_pct = (total_with_roots / total_tokens * 100) if total_tokens > 0 else 0
+        # STRICT REQUIREMENT: 100% root coverage for Sura 1 and Sura 2
+        # This ensures completeness before extending to other suras
+        assert sura_1_with_roots == sura_1_total, (
+            f"Sura 1 root extraction incomplete: {sura_1_with_roots}/{sura_1_total} ({sura_1_coverage:.1f}%). "
+            f"All tokens must have roots before proceeding to other suras."
+        )
         
-        print(f"\n✓ Root extraction completed:")
-        print(f"  Sura 1: {sura_1_with_roots} tokens with roots")
-        print(f"  Sura 2: {sura_2_with_roots} tokens with roots")
-        print(f"  Total coverage: {coverage_pct:.1f}% ({total_with_roots}/{total_tokens})")
-        
-        # Note: We don't assert a minimum coverage since we're using a limited fallback dictionary
-        # The important thing is that root extraction ran without errors
+        assert sura_2_with_roots == sura_2_total, (
+            f"Sura 2 root extraction incomplete: {sura_2_with_roots}/{sura_2_total} ({sura_2_coverage:.1f}%). "
+            f"All tokens must have roots before proceeding to other suras."
+        )
     
     def test_no_duplicate_tokens_per_position(self, db_session: Session):
         """Verify no duplicate tokens exist for the same (sura, aya, position)."""

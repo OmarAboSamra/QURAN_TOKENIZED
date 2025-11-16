@@ -53,9 +53,39 @@ class QuranCorpusExtractor(RootExtractor):
         super().__init__("qurancorpus")
         self.base_url = "https://corpus.quran.com/wordmorphology.jsp"
         
-        # Fallback data for demonstration when API is unavailable
-        # Includes Al-Fatiha and common words from Al-Baqarah
-        self.fallback_roots = {
+        # Load comprehensive roots from cache file
+        self.fallback_roots = self._load_roots_cache()
+        
+    def _load_roots_cache(self) -> dict:
+        """Load roots from comprehensive cache file."""
+        cache_path = Path(__file__).parent.parent.parent / "data" / "quran_roots_comprehensive.json"
+        
+        if cache_path.exists():
+            try:
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Extract root values from nested structure
+                    # Format: {word: {"placeholder": root}} or {word: {"qurancorpus": root}}
+                    roots_dict = {}
+                    for word, sources in data.items():
+                        if isinstance(sources, dict):
+                            # Get first available root from any source
+                            root = sources.get('qurancorpus') or sources.get('placeholder')
+                            if root:
+                                roots_dict[word] = root
+                        elif isinstance(sources, str):
+                            roots_dict[word] = sources
+                    return roots_dict
+            except Exception as e:
+                print(f"[WARNING] Failed to load comprehensive roots: {e}")
+                return self._get_fallback_roots()
+        else:
+            print(f"[WARNING] Comprehensive roots file not found at {cache_path}")
+            return self._get_fallback_roots()
+    
+    def _get_fallback_roots(self) -> dict:
+        """Get minimal fallback roots for basic functionality."""
+        return {
             # Surah 1: Al-Fatiha
             "بسم": "سمو",
             "الله": "اله",

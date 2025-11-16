@@ -9,8 +9,14 @@ from backend.db import get_sync_session_maker
 from backend.logging_config import get_logger
 from backend.models import Token
 from backend.repositories.token_repository import TokenRepository
-from backend.services.root_extractor import RootExtractionService
+from backend.root_extraction_config import ROOT_EXTRACTION_BACKEND
 from backend.worker import celery_app
+
+# Import appropriate service based on configuration
+if ROOT_EXTRACTION_BACKEND == "multi-source":
+    from backend.services.root_extractor_v2 import RootExtractionService
+else:
+    from backend.services.root_extractor import RootExtractionService
 
 logger = get_task_logger(__name__)
 structured_logger = get_logger(__name__)

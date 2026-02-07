@@ -108,8 +108,13 @@ def extract_roots_for_sura(
             
             for token in batch:
                 try:
-                    # Extract root
-                    root_result = root_service.extract_root_sync(token.normalized)
+                    # Extract root with location info for corpus extractor
+                    root_result = root_service.extract_root_sync(
+                        token.normalized,
+                        sura=token.sura,
+                        aya=token.aya,
+                        position=token.position
+                    )
                     
                     if root_result and root_result.get("root"):
                         token.root = root_result["root"]
@@ -215,7 +220,13 @@ def extract_roots_chunk(
                 continue
             
             try:
-                root_result = root_service.extract_root_sync(token.normalized)
+                # Extract root with location info for corpus extractor
+                root_result = root_service.extract_root_sync(
+                    token.normalized,
+                    sura=token.sura,
+                    aya=token.aya,
+                    position=token.position
+                )
                 
                 if root_result and root_result.get("root"):
                     token.root = root_result["root"]

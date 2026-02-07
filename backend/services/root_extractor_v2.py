@@ -87,13 +87,276 @@ class RootExtractor(ABC):
 
 class QuranCorpusExtractor(RootExtractor):
     """
-    Extract roots from Quranic Arabic Corpus API.
+    Extract roots from Quranic Arabic Corpus word-by-word pages.
     
-    Queries corpus.quran.com morphology data to extract verified roots.
+    Fetches pre-extracted roots from corpus.quran.com which provides accurate
+    morphological analysis including roots in Buckwalter transliteration.
     """
     
     def __init__(self):
         super().__init__("qurancorpus")
+        self.base_url = "https://corpus.quran.com"
+        self.min_request_interval = 1.0  # 1 second between requests
+        self.verse_cache = {}  # Cache roots by verse
+        
+        # Buckwalter to Arabic transliteration map
+        self.buckwalter_map = {
+            'A': 'ا', 'b': 'ب', 't': 'ت', 'v': 'ث', 'j': 'ج', 'H': 'ح', 'x': 'خ',
+            'd': 'د', '*': 'ذ', 'r': 'ر', 'z': 'ز', 's': 'س', '$': 'ش', 'S': 'ص',
+            'D': 'ض', 'T': 'ط', 'Z': 'ظ', 'E': 'ع', 'g': 'غ', 'f': 'ف', 'q': 'ق',
+            'k': 'ك', 'l': 'ل', 'm': 'م', 'n': 'ن', 'h': 'ه', 'w': 'و', 'y': 'ي',
+            'Y': 'ى', "'": 'ء', 'p': 'ة', '|': 'آ', '>': 'أ', '<': 'إ', '&': 'ؤ', '}': 'ئ',
+        }
+    
+    def _buckwalter_to_arabic(self, text: str) -> str:
+        """Convert Buckwalter transliteration to Arabic"""
+        return ''.join(self.buckwalter_map.get(c, c) for c in text)
+    
+    def _create_client(self) -> httpx.AsyncClient:
+        """Create a new HTTP client."""
+        return httpx.AsyncClient(
+            timeout=30.0,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+            }
+        )
+    
+    async def _fetch_verse_roots(self, sura: int, aya: int) -> dict[int, str]:
+        """
+        Fetch all roots for a verse from corpus word-by-word page.
+        
+        Returns:
+            dict mapping position (0-indexed) to Arabic root
+        """
+        cache_key = f"{sura}:{aya}"
+        if cache_key in self.verse_cache:
+            return self.verse_cache[cache_key]
+        
+        client = None
+        try:
+            client = self._create_client()
+            url = f"{self.base_url}/wordbyword.jsp?chapter={sura}&verse={aya}"
+            
+            print(f"[{self.name}] Fetching verse {sura}:{aya}")
+            
+            response = await client.get(url)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            roots = {}
+            
+            # Find all rows in morphology table
+            for row in soup.find_all('tr'):
+                cells = row.find_all('td')
+                if len(cells) >= 3:
+                    # First cell: translation with dictionary link and location
+                    translation_cell = cells[0]
+                    dict_link = translation_cell.find('a', href=re.compile(r'/qurandictionary\.jsp\?q='))
+                    
+                    if dict_link:
+                        # Extract location from the cell
+                        location_span = translation_cell.find('span', class_='location')
+                        if location_span:
+                            location_text = location_span.text.strip()  # Format: "(1:1:1)"
+                            # Parse location: (sura:aya:word_index)
+                            loc_match = re.match(r'\((\d+):(\d+):(\d+)\)', location_text)
+                            if loc_match:
+                                loc_sura, loc_aya, word_index = map(int, loc_match.groups())
+                                
+                                # Only include words from the requested verse
+                                if loc_sura == sura and loc_aya == aya:
+                                    # Extract Buckwalter root from URL
+                                    href = dict_link.get('href', '')
+                                    root_match = re.search(r'q=([a-zA-Z*$]+)', href)
+                                    if root_match:
+                                        root_buckwalter = root_match.group(1)
+                                        root_arabic = self._buckwalter_to_arabic(root_buckwalter)
+                                        
+                                        # word_index is 1-based in corpus, convert to 0-based
+                                        position = word_index - 1
+                                        roots[position] = root_arabic
+            
+            print(f"[{self.name}] Found {len(roots)} words in verse {sura}:{aya}")
+            
+            # Cache the results
+            self.verse_cache[cache_key] = roots
+            return roots
+            
+        except Exception as e:
+            print(f"[{self.name}] Error fetching verse {sura}:{aya}: {e}")
+            return {}
+        finally:
+            if client:
+                await client.aclose()
+    
+    async def extract_root(self, word: str, sura: int = None, aya: int = None, position: int = None) -> RootExtractionResult:
+        """
+        Extract root from Quranic Corpus by fetching entire verse.
+        
+        Args:
+            word: Arabic word (for error messages)
+            sura: Sura number (required)
+            aya: Aya number (required)
+            position: Word position in verse (0-indexed, required)
+        """
+        if sura is None or aya is None or position is None:
+            return RootExtractionResult(
+                word=word,
+                root=None,
+                source=self.name,
+                success=False,
+                error="sura, aya, and position are required for corpus extractor"
+            )
+        
+        try:
+            await self.rate_limit()
+            
+            # Fetch all roots for the verse
+            verse_roots = await self._fetch_verse_roots(sura, aya)
+            
+            # Get root for this position
+            root = verse_roots.get(position)
+            
+            if root:
+                print(f"[{self.name}] {sura}:{aya}:{position} {word} -> {root}")
+                return RootExtractionResult(
+                    word=word,
+                    root=root,
+                    source=self.name,
+                    success=True,
+                    confidence=1.0  # Corpus data is authoritative
+                )
+            else:
+                return RootExtractionResult(
+                    word=word,
+                    root=None,
+                    source=self.name,
+                    success=False,
+                    error=f"Position {position} not found in verse {sura}:{aya}"
+                )
+        except Exception as e:
+            return RootExtractionResult(
+                word=word,
+                root=None,
+                source=self.name,
+                success=False,
+                error=str(e)
+            )
+
+
+class OfflineCorpusCacheExtractor(RootExtractor):
+    """
+    Extract roots from offline corpus cache (pre-built from corpus.quran.com).
+    
+    This extractor provides instant, offline access to all Quranic roots
+    with 100% accuracy. The cache is built using build_corpus_cache.py
+    and stored in JSON format.
+    
+    Benefits:
+    - Zero network requests
+    - Instant lookups
+    - 100% accuracy for Quranic words
+    - Serves as authoritative fallback
+    """
+    
+    def __init__(self, cache_path: Path):
+        super().__init__("offline_corpus_cache")
+        self.cache_path = cache_path
+        self.cache = {}
+        self.metadata = {}
+        self._load_cache()
+    
+    def _load_cache(self):
+        """Load the offline corpus cache from disk."""
+        try:
+            if not self.cache_path.exists():
+                print(f"[{self.name}] Cache file not found: {self.cache_path}")
+                print(f"[{self.name}] Run scripts/build_corpus_cache.py to create cache")
+                return
+            
+            with open(self.cache_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            self.metadata = data.get('metadata', {})
+            self.cache = data.get('roots', {})
+            
+            print(f"[{self.name}] Loaded cache from {self.cache_path}")
+            print(f"[{self.name}] Total words: {self.metadata.get('total_words', len(self.cache))}")
+        
+        except Exception as e:
+            print(f"[{self.name}] Error loading cache: {e}")
+            self.cache = {}
+    
+    async def extract_root(self, word: str, sura: int = None, aya: int = None, position: int = None) -> RootExtractionResult:
+        """
+        Extract root from offline cache.
+        
+        Args:
+            word: Arabic word (for error messages)
+            sura: Sura number (required)
+            aya: Aya number (required)
+            position: Word position in verse (0-indexed, required)
+        
+        Returns:
+            RootExtractionResult with root from cache
+        """
+        if sura is None or aya is None or position is None:
+            return RootExtractionResult(
+                word=word,
+                root=None,
+                source=self.name,
+                success=False,
+                error="sura, aya, and position are required for cache extractor"
+            )
+        
+        # No rate limiting needed - it's offline!
+        
+        try:
+            # Build cache key
+            key = f"{sura}:{aya}:{position}"
+            
+            # Lookup in cache
+            root = self.cache.get(key)
+            
+            if root:
+                return RootExtractionResult(
+                    word=word,
+                    root=root,
+                    source=self.name,
+                    success=True,
+                    confidence=1.0  # Cache is authoritative
+                )
+            else:
+                return RootExtractionResult(
+                    word=word,
+                    root=None,
+                    source=self.name,
+                    success=False,
+                    error=f"Position {key} not found in cache"
+                )
+        
+        except Exception as e:
+            return RootExtractionResult(
+                word=word,
+                root=None,
+                source=self.name,
+                success=False,
+                error=str(e)
+            )
+
+
+class OldQuranCorpusExtractor(RootExtractor):
+    """
+    OLD VERSION - Extract roots from Quranic Corpus by searching.
+    Kept for reference but not used.
+    """
+    
+    def __init__(self):
+        super().__init__("qurancorpus_old")
         self.base_url = "https://corpus.quran.com"
         self.min_request_interval = 2.0  # 2 seconds between requests
     
@@ -748,9 +1011,19 @@ class MultiSourceVerifier:
     Features:
     - Query multiple extractors in parallel
     - Calculate consensus based on agreement
+    - Trust weighting: cache/corpus > algorithmic
     - Provide confidence scoring
     - Handle conflicts intelligently
+    - Record all candidate roots for auditability
     """
+    
+    # Trust weights for different source types
+    SOURCE_WEIGHTS = {
+        'offline_corpus_cache': 10.0,  # Highest trust: pre-verified corpus data
+        'qurancorpus': 10.0,           # Highest trust: authoritative online corpus
+        'pyarabic': 5.0,               # Medium-high trust: database + algorithm
+        'alkhalil': 3.0,               # Medium trust: algorithmic only
+    }
     
     def __init__(self, extractors: list[RootExtractor], cache_path: Optional[Path] = None):
         """
@@ -862,34 +1135,59 @@ class MultiSourceVerifier:
             print(f"[MultiSourceVerifier] No successful extractions for: {word}")
             return None
         
-        # Calculate consensus
-        root_votes = Counter(r.root for r in successful_results)
-        most_common_root, vote_count = root_votes.most_common(1)[0]
+        # Calculate weighted consensus using trust scores
+        root_weighted_votes: dict[str, float] = {}
+        root_simple_votes: dict[str, int] = {}
         
-        # Build sources dict
+        for result in successful_results:
+            root = result.root
+            weight = self.SOURCE_WEIGHTS.get(result.source, 1.0)
+            
+            # Weighted vote
+            root_weighted_votes[root] = root_weighted_votes.get(root, 0.0) + weight
+            
+            # Simple vote count
+            root_simple_votes[root] = root_simple_votes.get(root, 0) + 1
+        
+        # Select root with highest weighted score
+        most_common_root = max(root_weighted_votes, key=root_weighted_votes.get)
+        weighted_score = root_weighted_votes[most_common_root]
+        simple_vote_count = root_simple_votes[most_common_root]
+        
+        # Build sources dict (all candidates for auditability)
         sources = {r.source: r.root for r in successful_results}
         
-        # Calculate confidence
-        # - High confidence: Multiple sources agree (0.9+)
-        # - Medium confidence: 2 sources agree or single high-confidence source (0.6-0.8)
-        # - Low confidence: Single source only (0.3-0.5)
+        # Calculate confidence based on:
+        # 1. Weighted score relative to total possible weight
+        # 2. Agreement count (simple votes)
+        # 3. Source trustworthiness
         total_sources = len(successful_results)
-        agreement_count = vote_count
+        total_weight = sum(root_weighted_votes.values())
         
-        if agreement_count >= 2:
-            confidence = 0.9
-        elif agreement_count == 1 and total_sources == 1:
-            # Single source - use its confidence
-            confidence = successful_results[0].confidence
-        else:
-            confidence = 0.5
+        # Base confidence from weighted score ratio
+        weight_confidence = weighted_score / total_weight if total_weight > 0 else 0.5
+        
+        # Boost confidence if multiple sources agree
+        agreement_boost = 0.0
+        if simple_vote_count >= 3:
+            agreement_boost = 0.2
+        elif simple_vote_count == 2:
+            agreement_boost = 0.1
+        
+        # Final confidence (capped at 1.0)
+        confidence = min(1.0, weight_confidence + agreement_boost)
+        
+        # Ensure minimum confidence for high-trust sources
+        if any(r.source in ['offline_corpus_cache', 'qurancorpus'] and r.root == most_common_root 
+               for r in successful_results):
+            confidence = max(confidence, 0.95)
         
         verified = VerifiedRoot(
             word=word,
             root=most_common_root,
             sources=sources,
             confidence=confidence,
-            agreement_count=agreement_count,
+            agreement_count=simple_vote_count,
             total_sources=total_sources
         )
         
@@ -897,7 +1195,13 @@ class MultiSourceVerifier:
         self.cache[word] = verified
         
         print(f"[MultiSourceVerifier] Verified: {word} -> {most_common_root} "
-              f"(confidence: {confidence:.2f}, agreement: {agreement_count}/{total_sources})")
+              f"(confidence: {confidence:.2f}, agreement: {simple_vote_count}/{total_sources}, "
+              f"weighted: {weighted_score:.1f}/{total_weight:.1f})")
+        
+        # Log conflicts if any
+        if len(root_weighted_votes) > 1:
+            conflicts = [f"{root}({votes:.1f})" for root, votes in root_weighted_votes.items()]
+            print(f"[MultiSourceVerifier] Conflicts: {', '.join(conflicts)}")
         
         return verified
     
@@ -916,39 +1220,85 @@ class RootExtractionService:
     Main service for root extraction with multi-source verification.
     
     This service manages the extraction pipeline:
-    1. Check cache for existing verified roots
-    2. Query multiple sources in parallel
-    3. Calculate consensus across sources
+    1. Try offline corpus cache first (instant, 100% accurate for Quran)
+    2. Fall back to online corpus if cache miss
+    3. Fall back to algorithmic extractors if no location info
     4. Save verified results to cache
     """
     
-    def __init__(self, cache_path: Optional[Path] = None):
+    def __init__(self, cache_path: Optional[Path] = None, corpus_cache_path: Optional[Path] = None):
         """
         Initialize service.
         
         Args:
             cache_path: Path to cache file for verified roots
+            corpus_cache_path: Path to offline corpus cache (pre-built)
         """
-        # Initialize extractors - order by reliability
-        # Using offline/algorithmic extractors since web scraping is blocked
-        extractors = [
+        # Initialize extractors - order by reliability and speed
+        
+        # 1. Offline corpus cache (fastest, most reliable for Quran)
+        if corpus_cache_path is None:
+            corpus_cache_path = Path(__file__).parent.parent.parent / "data" / "corpus_roots_cache.json"
+        self.offline_corpus = OfflineCorpusCacheExtractor(corpus_cache_path)
+        
+        # 2. Online corpus extractor (authoritative but slower)
+        self.corpus_extractor = QuranCorpusExtractor()
+        
+        # 3. Offline/algorithmic extractors for fallback (no location needed)
+        offline_extractors = [
             PyArabicExtractor(),     # Primary: Database + enhanced algorithm (high confidence)
             AlKhalilExtractor(),     # Secondary: Improved algorithmic (medium confidence)
         ]
         
-        # Initialize verifier
-        self.verifier = MultiSourceVerifier(extractors, cache_path)
+        # Initialize verifier with offline extractors
+        self.verifier = MultiSourceVerifier(offline_extractors, cache_path)
     
-    async def extract_root(self, word: str) -> Optional[dict]:
+    async def extract_root(self, word: str, sura: int = None, aya: int = None, position: int = None) -> Optional[dict]:
         """
         Extract and verify root for a word.
         
         Args:
             word: Normalized Arabic word
+            sura: Sura number (optional, enables corpus extractors)
+            aya: Aya number (optional, enables corpus extractors)
+            position: Word position in verse (optional, enables corpus extractors)
             
         Returns:
             Dictionary with root and source information, or None if failed
         """
+        # Priority 1: Try offline corpus cache first if location is available
+        # This is instant and 100% accurate for Quranic words
+        if sura is not None and aya is not None and position is not None:
+            try:
+                offline_result = await self.offline_corpus.extract_root(word, sura, aya, position)
+                if offline_result.success and offline_result.root:
+                    return {
+                        'root': offline_result.root,
+                        'sources': {offline_result.source: offline_result.root},
+                        'confidence': offline_result.confidence,
+                        'agreement': "1/1",
+                        'method': 'offline_cache'
+                    }
+            except Exception as e:
+                print(f"[RootExtractionService] Offline cache lookup failed: {e}")
+                # Fall through to online corpus
+            
+            # Priority 2: Try online corpus if cache miss
+            try:
+                corpus_result = await self.corpus_extractor.extract_root(word, sura, aya, position)
+                if corpus_result.success and corpus_result.root:
+                    return {
+                        'root': corpus_result.root,
+                        'sources': {corpus_result.source: corpus_result.root},
+                        'confidence': corpus_result.confidence,
+                        'agreement': "1/1",
+                        'method': 'online_corpus'
+                    }
+            except Exception as e:
+                print(f"[RootExtractionService] Online corpus extraction failed: {e}")
+                # Fall through to offline extractors
+        
+        # Priority 3: Fall back to algorithmic extractors with multi-source verification
         verified = await self.verifier.verify_root(word)
         
         if verified:
@@ -956,17 +1306,21 @@ class RootExtractionService:
                 'root': verified.root,
                 'sources': verified.sources,
                 'confidence': verified.confidence,
-                'agreement': f"{verified.agreement_count}/{verified.total_sources}"
+                'agreement': f"{verified.agreement_count}/{verified.total_sources}",
+                'method': 'algorithmic'
             }
         else:
             return None
     
-    def extract_root_sync(self, word: str) -> Optional[dict]:
+    def extract_root_sync(self, word: str, sura: int = None, aya: int = None, position: int = None) -> Optional[dict]:
         """
         Synchronous wrapper for Celery tasks.
         
         Args:
             word: Normalized Arabic word
+            sura: Sura number (optional, enables corpus extractor)
+            aya: Aya number (optional, enables corpus extractor)
+            position: Word position in verse (optional, enables corpus extractor)
             
         Returns:
             Dictionary with root information, or None if failed
@@ -975,7 +1329,7 @@ class RootExtractionService:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                result = loop.run_until_complete(self.extract_root(word))
+                result = loop.run_until_complete(self.extract_root(word, sura, aya, position))
                 return result
             finally:
                 # Clean up event loop (extractors create clients per-request)

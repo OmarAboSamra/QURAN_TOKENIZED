@@ -137,16 +137,6 @@ class Settings(BaseSettings):
         return "postgresql" in self.database_url
 
     @property
-    def is_sqlite(self) -> bool:
-        """Check if using SQLite database."""
-        return self.database_url.startswith("sqlite")
-
-    @property
-    def is_postgresql(self) -> bool:
-        """Check if using PostgreSQL database."""
-        return "postgresql" in self.database_url
-
-    @property
     def root_sources_list(self) -> list[str]:
         """Return root sources as a list."""
         return [source.strip() for source in self.root_sources.split(",")]

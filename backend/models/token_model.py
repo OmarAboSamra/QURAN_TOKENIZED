@@ -1,52 +1,13 @@
 """ORM models for Qur'an tokens (words, verses, etc.)."""
-import json
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, Any
+from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, TypeDecorator, func
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Index, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.db import Base
-from backend.config import get_settings
-
-_settings = get_settings()
-_is_postgres = _settings.database_url.startswith(("postgresql://", "postgresql+"))
-
-
-class JSONType(TypeDecorator):
-    """JSON type that works with both PostgreSQL JSONB and SQLite Text."""
-    
-    impl = Text
-    cache_ok = True
-    
-    def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
-            return dialect.type_descriptor(JSONB())
-        else:
-            return dialect.type_descriptor(Text())
-    
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return None
-        if dialect.name == 'postgresql':
-            return value
-        return json.dumps(value)
-    
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return None
-        if dialect.name == 'postgresql':
-            return value
-        if isinstance(value, str):
-            return json.loads(value)
-        return value
-
-
-if TYPE_CHECKING:
-    from backend.models.root_model import Root
-    from backend.models.verse_model import Verse
+from backend.models.types import JSONType
 
 
 class TokenStatus(str, Enum):

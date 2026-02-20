@@ -1,11 +1,17 @@
-"""Enhanced Qur'an data API routes with advanced filters and caching."""
+"""Qur'an data API routes with advanced filters and caching."""
 import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
-from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.api.schemas import (
+    RootTokensResponse,
+    StatsResponse,
+    TokenListResponse,
+    TokenResponse,
+    VerseResponse,
+)
 from backend.cache import get_cache
 from backend.db import get_db_session
 from backend.logging_config import get_logger, log_cache_operation, log_request
@@ -17,66 +23,6 @@ router = APIRouter(prefix="/quran", tags=["Quran"])
 logger = get_logger(__name__)
 cache = get_cache()
 token_repo = TokenRepository()
-
-
-# Response Models
-class TokenResponse(BaseModel):
-    """Response model for a single token."""
-
-    id: int
-    sura: int
-    aya: int
-    position: int
-    text_ar: str
-    normalized: str
-    root: Optional[str] = None
-    status: str
-    references: Optional[list[int]] = None
-    interpretations: Optional[dict] = None
-
-    class Config:
-        """Pydantic config."""
-
-        from_attributes = True
-
-
-class TokenListResponse(BaseModel):
-    """Response model for a list of tokens."""
-
-    tokens: list[TokenResponse]
-    total: int
-    page: int
-    page_size: int
-    filters: dict = Field(default_factory=dict)
-
-
-class VerseResponse(BaseModel):
-    """Response model for a complete verse."""
-
-    sura: int
-    aya: int
-    tokens: list[TokenResponse]
-    text_ar: str
-    word_count: int
-
-
-class RootTokensResponse(BaseModel):
-    """Response model for tokens sharing a root."""
-
-    root: str
-    total_count: int
-    tokens: list[TokenResponse]
-    page: int
-    page_size: int
-
-
-class StatsResponse(BaseModel):
-    """Response model for statistics."""
-
-    total_tokens: int
-    total_verses: int
-    total_roots: int
-    suras: int = 114
 
 
 # Endpoints

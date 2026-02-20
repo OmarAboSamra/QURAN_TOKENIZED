@@ -21,22 +21,36 @@ quran-backend/
 │
 ├── backend/
 │   ├── main.py                 # FastAPI application entry point
-│   ├── config.py               # Configuration management
-│   ├── db.py                   # Database connection and session management
+│   ├── config.py               # Configuration management (pydantic-settings)
+│   ├── db.py                   # Database engine & session singletons
+│   ├── cache.py                # Redis cache manager
+│   ├── metrics.py              # Prometheus metrics
+│   ├── logging_config.py       # Structured logging (structlog)
 │   │
 │   ├── api/
-│   │   ├── routes_quran.py     # Qur'an data endpoints
-│   │   └── routes_meta.py      # Health check and metadata
+│   │   ├── schemas.py              # Shared Pydantic response models
+│   │   ├── routes_quran_enhanced.py # Qur'an data endpoints
+│   │   ├── routes_meta.py          # Health check and metadata
+│   │   └── routes_pipeline.py      # Pipeline management endpoints
 │   │
 │   ├── models/
+│   │   ├── types.py            # Shared SQLAlchemy types (JSONType)
 │   │   ├── token_model.py      # Token ORM model
-│   │   └── root_model.py       # Root ORM model
+│   │   ├── root_model.py       # Root ORM model
+│   │   └── verse_model.py      # Verse ORM model
 │   │
-│   └── services/
-│       ├── tokenizer_service.py      # Tokenization logic
-│       ├── root_extractor.py         # Root extraction from sources
-│       ├── discrepancy_checker.py    # Conflict detection
-│       └── reference_linker.py       # Reference building
+│   ├── repositories/
+│   │   ├── base.py             # Generic CRUD repository
+│   │   └── token_repository.py # Token-specific queries
+│   │
+│   ├── services/
+│   │   ├── tokenizer_service.py      # Tokenization logic
+│   │   ├── root_extractor_v2.py      # Multi-source root extraction
+│   │   ├── discrepancy_checker.py    # Conflict detection
+│   │   └── reference_linker.py       # Reference building
+│   │
+│   ├── tasks/                  # Celery background tasks
+│   └── static/demo/            # Demo frontend
 │
 ├── scripts/
 │   ├── tokenize_quran.py       # Offline tokenization script
@@ -49,9 +63,8 @@ quran-backend/
 │   ├── quran_tokens_word.csv        # Output: Tokenized words
 │   └── quran_roots_cache.json       # Cache: Root extraction results
 │
+├── docs/                       # Technical documentation
 ├── tests/
-│   └── test_tokenization.py
-│
 ├── requirements.txt
 ├── pyproject.toml
 └── README.md
@@ -75,8 +88,8 @@ cd c:\quran-backend
 2. **Create a virtual environment**:
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
 3. **Install dependencies**:
@@ -130,7 +143,7 @@ Extract Arabic roots from multiple sources:
 python scripts/fetch_roots.py --limit 100
 ```
 
-**Note**: The root extraction sources are currently placeholders. You'll need to implement actual API calls in `backend/services/root_extractor.py`.
+**Note**: Root extraction uses multiple online sources configured in `backend/services/root_extractor_v2.py`.
 
 #### Stage 3: Reconcile Discrepancies
 
@@ -280,15 +293,17 @@ LOG_LEVEL=INFO
 
 Splits Qur'an text into individual words with normalization.
 
-### Stage 2: Root Extraction ⚠️
-**Status**: Structure implemented, API calls needed
+### Stage 2: Root Extraction ✅
+**Status**: Multi-source extraction implemented
 
-Currently has placeholder implementations for:
-- QuranCorpus
-- Tanzil
-- Almaany
+Extracts roots from multiple sources with consensus verification:
+- QuranCorpus (offline cache)
+- AlMaany
+- Baheth
+- PyArabic (algorithmic)
+- AlKhalil (algorithmic)
 
-**To implement**: Add actual API calls or web scraping logic in `backend/services/root_extractor.py`.
+See `backend/services/root_extractor_v2.py` for implementation.
 
 ### Stage 3: Discrepancy Detection ✅
 **Status**: Fully implemented
@@ -364,20 +379,18 @@ Download from https://qurancomplex.gov.sa/
 
 Use the Quranic Arabic Corpus: https://corpus.quran.com/
 
-## 🛠️ Implementing Root Extraction
+## 🛠️ Extending Root Extraction
 
-To implement actual root extraction, edit `backend/services/root_extractor.py`:
+To add a new root extraction source, edit `backend/services/root_extractor_v2.py`:
 
 ```python
-class QuranCorpusExtractor(RootExtractor):
+class MyExtractor(BaseRootExtractor):
     async def extract_root(self, word: str) -> RootExtractionResult:
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # Implement your API call here
                 response = await client.get(
                     f"{self.base_url}?word={word}"
                 )
-                # Parse response and extract root
                 root = parse_response(response)
                 
                 return RootExtractionResult(

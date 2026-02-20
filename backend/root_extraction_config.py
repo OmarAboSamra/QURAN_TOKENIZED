@@ -1,26 +1,18 @@
 """
 Root Extraction Configuration.
-
-Switch between different root extraction backends here.
 """
 
-# Backend selection
-# Options: "legacy" (placeholder algorithmic), "multi-source" (verified API sources)
-ROOT_EXTRACTION_BACKEND = "multi-source"  # Using enhanced offline extractors
-
-# Multi-source configuration
-# Using offline extractors with improved algorithms (web scraping blocked by sites)
-MULTI_SOURCE_ENABLED_EXTRACTORS = [
-    "pyarabic",  # PyArabic with database + enhanced algorithm (primary)
-    "alkhalil",  # Improved AlKhalil algorithmic (secondary)
+# Enabled extractors (order = priority)
+ENABLED_EXTRACTORS = [
+    "pyarabic",   # PyArabic with database + enhanced algorithm (primary)
+    "alkhalil",   # AlKhalil algorithmic (secondary)
 ]
 
-# Cache configuration
+# Cache paths
 VERIFIED_ROOTS_CACHE_PATH = "data/quran_roots_verified.json"
-LEGACY_ROOTS_CACHE_PATH = "data/quran_roots_comprehensive.json"
 
-# API rate limiting (requests per second per source)
-API_RATE_LIMIT = 0.67  # ~1.5 seconds between requests per source
+# API rate limiting (seconds between requests per source)
+API_RATE_LIMIT = 1.5
 
 # Retry configuration
 MAX_RETRIES_PER_SOURCE = 3

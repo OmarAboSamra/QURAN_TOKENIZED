@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.api import routes_meta, routes_quran, routes_quran_enhanced, routes_pipeline
+from backend.api import routes_meta, routes_quran_enhanced, routes_pipeline
 from backend.config import get_settings
 from backend.db import init_db_async
 
@@ -80,7 +80,6 @@ app.add_middleware(
 # Include routers
 app.include_router(routes_meta.router)
 app.include_router(routes_quran_enhanced.router)
-app.include_router(routes_quran.router)
 app.include_router(routes_pipeline.router)
 
 # Mount static files for demo
@@ -97,7 +96,6 @@ async def root() -> dict[str, str]:
         "version": settings.api_version,
         "docs": "/docs",
         "demo": "/demo",
-        "demo_enhanced": "/demo-enhanced",
         "health": "/meta/health",
         "pipeline": "/pipeline/status",
     }
@@ -105,15 +103,15 @@ async def root() -> dict[str, str]:
 
 @app.get("/demo")
 async def demo() -> FileResponse:
-    """Serve the React demo frontend."""
+    """Serve the demo frontend."""
     demo_path = Path(__file__).parent / "static" / "demo" / "index.html"
     return FileResponse(demo_path)
 
 
 @app.get("/demo-enhanced")
 async def demo_enhanced() -> FileResponse:
-    """Serve the enhanced React demo with components and caching."""
-    demo_path = Path(__file__).parent / "static" / "demo" / "index-enhanced.html"
+    """Redirect legacy /demo-enhanced to /demo."""
+    demo_path = Path(__file__).parent / "static" / "demo" / "index.html"
     return FileResponse(demo_path)
 
 

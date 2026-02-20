@@ -3,7 +3,7 @@ from typing import Optional
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from backend.models.token_model import Token, TokenStatus
 from backend.repositories.base import BaseRepository
@@ -183,12 +183,11 @@ class TokenRepository(BaseRepository[Token]):
         """Get all tokens for a specific verse (async)."""
         stmt = (
             select(Token)
-            .options(joinedload(Token.verse), joinedload(Token.root_ref))
             .where(Token.sura == sura, Token.aya == aya)
             .order_by(Token.position)
         )
         result = await session.execute(stmt)
-        return list(result.scalars().unique().all())
+        return list(result.scalars().all())
 
     async def aget_by_root(
         self,

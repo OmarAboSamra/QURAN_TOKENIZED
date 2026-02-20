@@ -274,7 +274,7 @@ Not implemented yet
 This is expected! Root extraction sources are placeholders.
 
 To implement:
-1. Edit `backend/services/root_extractor.py`
+1. Edit `backend/services/root_extractor_v2.py`
 2. Add actual API calls or web scraping
 3. See `README.md` for examples
 
@@ -606,7 +606,7 @@ Check:
 
 ### "Root extraction doesn't work"
 
-Expected! Implement in `backend/services/root_extractor.py`:
+Expected! Implement in `backend/services/root_extractor_v2.py`:
 ```python
 async def extract_root(self, word: str) -> RootExtractionResult:
     # Add your implementation here

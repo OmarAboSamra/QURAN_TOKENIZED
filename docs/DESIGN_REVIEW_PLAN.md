@@ -75,21 +75,25 @@
 
 ---
 
-## D5 · No Mechanism for Manual Root Corrections via API (MEDIUM)
+## ~~D5 · No Mechanism for Manual Root Corrections via API (MEDIUM)~~ ✅ DONE
+
+> **Implemented in commit `b6ee92f`.** PATCH /quran/token/{id} and PATCH /quran/root/{root} with X-API-Key auth, root FK re-linking, and cache invalidation.
 
 **Gap**: The requirement says "easy to update manually" but there is no PATCH/PUT endpoint for correcting a token's root. Corrections currently require direct DB access or running a script.
 
 **Requirement violated**: #4 — easy manual updates.
 
 **Action**:
-- Add `PATCH /quran/token/{id}` to update `root`, `status`, `interpretations`.
-- Add `PATCH /quran/root/{root}` to update `meaning`, `metadata_`.
-- Protect with simple auth (API key or basic auth).
-- Invalidate Redis cache for affected keys on update.
+- ~~Add `PATCH /quran/token/{id}` to update `root`, `status`, `interpretations`.~~
+- ~~Add `PATCH /quran/root/{root}` to update `meaning`, `metadata_`.~~
+- ~~Protect with simple auth (API key or basic auth).~~
+- ~~Invalidate Redis cache for affected keys on update.~~
 
 ---
 
-## D6 · No Full-Text Search Index (LOW)
+## ~~D6 · No Full-Text Search Index (LOW)~~ ✅ DONE
+
+> **Implemented in commit `b6ee92f`.** FTS5 virtual table (tokens_fts) with auto-sync triggers, ~10ms search over 77K tokens. Auto-created on startup.
 
 **Gap**: Text search uses `LIKE '%query%'` which forces a full table scan. With 77,000+ tokens this is slow for arbitrary substring searches.
 
@@ -97,8 +101,8 @@
 
 **Action**:
 - For PostgreSQL: add GIN/GiST index with `pg_trgm` extension.
-- For SQLite: add FTS5 virtual table shadowing the Token table.
-- Update `TokenRepository.asearch()` to use the appropriate index.
+- ~~For SQLite: add FTS5 virtual table shadowing the Token table.~~
+- ~~Update `TokenRepository.asearch()` to use the appropriate index.~~
 
 ---
 

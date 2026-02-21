@@ -1,4 +1,21 @@
-"""Qur'an data API routes with advanced filters and caching."""
+"""
+Core Qur'an data API routes with advanced filters and caching.
+
+This is the main API router, providing six endpoints:
+
+    GET /quran/token/{id}        – Retrieve a single word token by ID
+    GET /quran/tokens            – Paginated list with sura/root/search filters
+    GET /quran/verse/{sura}/{aya} – Complete verse reconstructed from tokens
+    GET /quran/root/{root}       – All tokens sharing a given Arabic root
+    GET /quran/search?q=...      – Full-text search in Arabic text
+    GET /quran/stats              – Aggregate statistics (total tokens/verses/roots)
+
+Each endpoint:
+    1. Checks the Redis cache (if enabled)
+    2. Queries the database via TokenRepository
+    3. Logs the request and records Prometheus metrics
+    4. Returns a Pydantic response model
+"""
 import time
 from typing import Optional
 

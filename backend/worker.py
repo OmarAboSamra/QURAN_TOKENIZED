@@ -1,4 +1,21 @@
-"""Celery worker configuration for background tasks."""
+"""
+Celery worker configuration for background tasks.
+
+Sets up the Celery app with Redis as broker and result backend.
+All background tasks (tokenization, root extraction, backups) are
+registered here via the `include` list.
+
+Task queues:
+    tokenization    – tokenize_sura, tokenize_sura_parallel
+    root_extraction – extract_roots_for_sura, extract_roots_parallel
+    maintenance     – backup_database, cleanup_old_backups
+
+To start a worker:
+    celery -A backend.worker:celery_app worker --loglevel=info
+
+To start the beat scheduler (periodic tasks):
+    celery -A backend.worker:celery_app beat --loglevel=info
+"""
 from celery import Celery
 
 from backend.config import get_settings

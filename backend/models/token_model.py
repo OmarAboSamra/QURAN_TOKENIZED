@@ -1,4 +1,21 @@
-"""ORM models for Qur'an tokens (words, verses, etc.)."""
+"""
+ORM model for Qur'an word tokens.
+
+The Token table is the central table of the system. Each row represents one
+word in the Qur'an, uniquely located by (sura, aya, position). The primary
+workflow is:
+
+    1. Tokenize  – split raw text into words, store text_ar + normalized
+    2. Extract   – query multiple Arabic root dictionaries, store root_sources
+    3. Verify    – compare sources, set consensus root + status
+    4. Link      – build cross-references to other words sharing the same root
+    5. Annotate  – (future) add interpretations, translations, context notes
+
+Status lifecycle:
+    MISSING → VERIFIED         (sources agree)
+    MISSING → DISCREPANCY      (sources disagree but majority exists)
+    MISSING → MANUAL_REVIEW    (low confidence or no majority)
+"""
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -21,10 +38,17 @@ class TokenStatus(str, Enum):
 
 class Token(Base):
     """
-    Represents a single word token from the Qur'an.
+    A single word token extracted from the Qur'an.
     
-    Each token is uniquely identified by its position in the text
-    (sura, aya, position within aya).
+    Uniquely identified by (sura, aya, position). Contains the original
+    Arabic text with diacritics, a normalized form for comparison, and
+    root extraction results from multiple sources.
+    
+    Key fields for the analysis use case:
+      - root:          the consensus Arabic root (e.g. كتب)
+      - root_sources:  JSON {"qurancorpus": "كتب", "almaany": "كتب", ...}
+      - references:    list of other token IDs sharing the same root
+      - interpretations: (future) meanings, translations, usage notes
     """
 
     __tablename__ = "tokens"

@@ -1,4 +1,20 @@
-"""Redis caching utilities."""
+"""
+Redis caching utilities.
+
+Provides an optional Redis caching layer that sits between the API routes
+and the database. When Redis is unavailable or disabled (the default),
+all cache operations gracefully return None / False so the API falls
+through to the database every time.
+
+Key naming convention:
+    root:{md5_hash}              – cached root for a normalized word
+    verse:{sura}:{aya}           – cached verse response
+    tokens_root:{root}:{page}    – cached paginated token list for a root
+
+Lifecycle:
+    get_cache() returns a module-level singleton CacheManager.
+    Call connect() on startup and disconnect() on shutdown.
+"""
 import hashlib
 import json
 from typing import Any, Optional
@@ -15,7 +31,14 @@ class CacheManager:
     """
     Redis cache manager for storing frequently accessed data.
     
-    Uses hash keys for root lookups and provides TTL-based caching.
+    All public methods are safe to call even when Redis is disabled
+    or unreachable — they return None/False instead of raising.
+    
+    Architecture:
+        - Lazy connection: connect() must be called explicitly
+        - Graceful degradation: any Redis error disables caching
+        - TTL-based expiration: configurable per operation
+        - JSON serialization: for complex objects (dicts, lists)
     """
 
     def __init__(self):
@@ -132,9 +155,11 @@ class CacheManager:
             print(f"Cache delete pattern error: {e}")
             return 0
 
-    # Specialized caching methods
+    # ── Specialized caching methods ───────────────────────────────
+    # These provide domain-specific key generation and TTL defaults.
+
     async def get_root(self, normalized_word: str) -> Optional[str]:
-        """Get cached root for a normalized word."""
+        """Get cached root for a normalized word (TTL 24h)."""
         key = self._make_key("root", self._make_hash(normalized_word))
         return await self.get(key)
 

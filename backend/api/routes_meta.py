@@ -1,4 +1,10 @@
-"""Metadata and health check routes."""
+"""
+Metadata and health check routes.
+
+Provides lightweight endpoints for monitoring and service discovery:
+    GET /meta/health  – Returns 200 if the server is running
+    GET /meta/info    – Returns API title, version, description
+"""
 from fastapi import APIRouter, status
 from pydantic import BaseModel
 

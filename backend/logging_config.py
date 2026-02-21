@@ -1,4 +1,19 @@
-"""Structured logging configuration."""
+"""
+Structured logging configuration using structlog.
+
+Provides JSON-formatted logs in production and colored console output
+in development. Also includes helper functions for consistent log
+records across the application (HTTP requests, DB queries, etc.).
+
+IMPORTANT: configure_logging() must be called once at startup for
+structlog processors to be active. Currently this is NOT called
+in main.py — flagged for the next optimization pass.
+
+Usage:
+    from backend.logging_config import get_logger
+    logger = get_logger(__name__)
+    logger.info("something_happened", key="value")
+"""
 import logging
 import sys
 from typing import Any

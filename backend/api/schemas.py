@@ -1,4 +1,10 @@
-"""Shared Pydantic response models for the Qur'an API."""
+"""
+Shared Pydantic response models for the Qur'an API.
+
+These models define the JSON shape returned by all /quran/* endpoints.
+They use `from_attributes = True` (Pydantic v2) to allow direct
+validation from SQLAlchemy ORM instances via model_validate().
+"""
 from typing import Optional
 
 from pydantic import BaseModel, Field

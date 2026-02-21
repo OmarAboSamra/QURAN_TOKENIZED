@@ -1,4 +1,13 @@
-"""Celery tasks for database backup and maintenance."""
+"""
+Celery tasks for database backup and maintenance.
+
+Provides periodic tasks (scheduled via Celery Beat) for:
+    - Nightly database dumps (SQLite .dump or pg_dump)
+    - Gzip compression of backup files
+    - Cleanup of old backups (retention policy)
+
+Backup files are stored in the ./backups/ directory.
+"""
 import gzip
 import os
 import subprocess

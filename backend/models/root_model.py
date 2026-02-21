@@ -1,4 +1,15 @@
-"""ORM model for Arabic roots."""
+"""
+ORM model for Arabic roots.
+
+The Root table provides a reverse index: given a root string like "كتب",
+quickly find how many tokens share it and what it means.
+
+Design note:
+    token_ids is a legacy JSON column that stores a flat list of Token IDs.
+    For roots with thousands of occurrences this doesn't scale well.
+    A proper many-to-many relationship (via Token.root FK) is preferred
+    for production queries — the API already queries Token directly.
+"""
 from datetime import datetime
 from typing import Optional
 
@@ -11,10 +22,11 @@ from backend.models.types import JSONType
 
 class Root(Base):
     """
-    Represents an Arabic root with all tokens that share it.
+    An Arabic root with aggregated metadata.
     
-    This table provides a reverse index for fast lookup of all words
-    derived from the same root.
+    Each root (e.g. كتب, قرأ) appears once in this table. The
+    token_count field caches how many tokens share this root for
+    fast statistics without counting the Token table.
     """
 
     __tablename__ = "roots"

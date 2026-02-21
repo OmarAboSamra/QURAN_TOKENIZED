@@ -18,18 +18,18 @@ if ($pythonVersion -match "Python 3\.1[0-9]") {
 Write-Host ""
 
 # Check if virtual environment exists
-if (Test-Path "venv") {
+if (Test-Path ".venv") {
     Write-Host "✓ Virtual environment already exists" -ForegroundColor Green
 } else {
     Write-Host "Creating virtual environment..." -ForegroundColor Yellow
-    python -m venv venv
+    python -m venv .venv
     Write-Host "✓ Virtual environment created" -ForegroundColor Green
 }
 Write-Host ""
 
 # Activate virtual environment
 Write-Host "Activating virtual environment..." -ForegroundColor Yellow
-& .\venv\Scripts\Activate.ps1
+& .\.venv\Scripts\Activate.ps1
 Write-Host "✓ Virtual environment activated" -ForegroundColor Green
 Write-Host ""
 
@@ -85,7 +85,7 @@ if ($response -eq "y") {
 } else {
     Write-Host ""
     Write-Host "To start the server later, run:" -ForegroundColor Cyan
-    Write-Host "  .\venv\Scripts\Activate.ps1" -ForegroundColor White
+    Write-Host "  .\.venv\Scripts\Activate.ps1" -ForegroundColor White
     Write-Host "  python backend/main.py" -ForegroundColor White
     Write-Host ""
     Write-Host "Or simply run:" -ForegroundColor Cyan

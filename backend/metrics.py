@@ -1,4 +1,17 @@
-"""Prometheus metrics for monitoring."""
+"""
+Prometheus metrics for monitoring.
+
+Defines custom counters and histograms for tracking root extraction,
+token operations, cache hits/misses, and database query latency.
+
+The helper functions (record_root_extraction, record_token_operation, etc.)
+are used by route handlers to emit metrics.
+
+KNOWN ISSUE: get_instrumentator() creates a FastAPI Instrumentator but
+it is never wired into the app via instrumentator.instrument(app) in
+main.py. The .add() calls also use an incorrect API. This is flagged
+for the next optimization pass.
+"""
 from typing import Optional
 
 from prometheus_client import Counter, Histogram, Info

@@ -1,4 +1,16 @@
-"""Celery tasks for root extraction."""
+"""
+Celery tasks for Arabic root extraction.
+
+Provides background tasks that extract roots for all tokens in a
+surah, using the multi-source RootExtractionService. Supports
+parallel chunking similar to tokenization_tasks.
+
+Key tasks:
+    extract_roots_for_sura  – Extract roots for one surah sequentially
+    extract_roots_chunk     – Process a batch of tokens (worker subtask)
+    extract_roots_parallel  – Fan out across workers by token batch
+    combine_extraction      – Callback that merges chunk results
+"""
 import time
 from typing import Dict, List
 

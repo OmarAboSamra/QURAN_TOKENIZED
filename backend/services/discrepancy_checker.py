@@ -1,4 +1,18 @@
-"""Service for detecting and reconciling discrepancies in root extraction."""
+"""
+Service for detecting and reconciling discrepancies in root extraction.
+
+When multiple sources (qurancorpus, almaany, baheth, etc.) each return a
+root for the same word, they may disagree. This service:
+
+    1. Compares all source results for a given word
+    2. Calculates a consensus root (most-voted)
+    3. Computes a confidence score (fraction of agreeing sources)
+    4. Recommends a TokenStatus:
+         VERIFIED       – ≥2 sources agree unanimously
+         DISCREPANCY    – sources disagree but a majority exists (≥50%)
+         MANUAL_REVIEW  – no clear majority (<50% agreement)
+         MISSING        – no source returned any root
+"""
 from collections import Counter
 from dataclasses import dataclass
 from typing import Optional

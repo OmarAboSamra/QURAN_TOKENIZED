@@ -1,4 +1,14 @@
-"""Token repository with custom queries."""
+"""
+Token repository with domain-specific query methods.
+
+Extends BaseRepository with queries tailored to the Qur'an analysis
+use case: looking up tokens by location (sura/aya/position), by root,
+by text search, and finding tokens that still need root extraction.
+
+Like the base class, each method has sync + async variants.
+Sync methods are used by offline scripts (tokenize_quran.py, etc.).
+Async methods are used by FastAPI route handlers.
+"""
 from typing import Optional
 
 from sqlalchemy import Select, func, or_, select

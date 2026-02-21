@@ -1,4 +1,10 @@
-"""Shared SQLAlchemy custom types for model definitions."""
+"""
+Shared SQLAlchemy custom types for model definitions.
+
+Provides a JSONType that automatically uses JSONB on PostgreSQL
+(with native indexing/querying) or serializes to Text on SQLite.
+This lets the same ORM models work on both databases without changes.
+"""
 import json
 
 from sqlalchemy import Text, TypeDecorator

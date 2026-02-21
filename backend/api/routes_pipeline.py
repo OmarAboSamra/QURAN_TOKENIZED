@@ -1,4 +1,18 @@
-"""API routes for pipeline management and background jobs."""
+"""
+API routes for pipeline management and background jobs.
+
+Provides endpoints to queue, monitor, and cancel Celery background tasks:
+
+    POST /pipeline/tokenize       – Queue tokenization for a surah
+    POST /pipeline/extract-roots  – Queue root extraction for a surah
+    POST /pipeline/process-sura   – Queue full pipeline (tokenize → extract)
+    GET  /pipeline/job/{job_id}   – Check status of a specific job
+    GET  /pipeline/status?sura=N  – Check overall pipeline status for a surah
+    DELETE /pipeline/job/{job_id} – Cancel a running job
+
+Requires a running Redis instance and Celery worker for actual execution.
+Without Celery, the endpoints will raise 500 errors on submission.
+"""
 import uuid
 from typing import Dict, Optional
 

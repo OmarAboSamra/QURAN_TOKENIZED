@@ -1,4 +1,22 @@
-"""Tokenization service for Qur'an text processing."""
+"""
+Tokenization service for Qur'an text processing.
+
+Converts raw Qur'an text (with full Arabic diacritics) into individual
+word tokens suitable for storage in the Token table.
+
+Pipeline:
+    1. Read input file (format: "sura|aya|text" per line)
+    2. Split each verse into words by whitespace
+    3. Normalize each word: remove diacritics, unify letter forms
+    4. Produce WordToken dataclass objects with location metadata
+    5. Optionally export to CSV for offline inspection
+
+Normalization rules:
+    - Remove tashkeel (ًٌٍَُِّ etc.)
+    - Unify hamza variants (أإآٱ → ا)
+    - Alef maksura to Ya (ى → ي)
+    - Ta marbuta to Ha (ة → ه)
+"""
 import csv
 import re
 from dataclasses import dataclass

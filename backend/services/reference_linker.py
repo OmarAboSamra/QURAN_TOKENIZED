@@ -1,4 +1,17 @@
-"""Service for building reference links between tokens sharing the same root."""
+"""
+Service for building reference links between tokens sharing the same root.
+
+After roots are extracted and verified, this service groups tokens by root
+and creates bidirectional cross-references. This enables the core analysis
+use case: "show me all other places where a word from root X appears."
+
+Pipeline:
+    1. build_root_index()        – root → [token_id, ...]
+    2. build_token_references()  – token_id → [related_token_ids, ...]
+    3. compress_references()     – cap at max_references per token
+
+The compressed references are stored in Token.references (JSON column).
+"""
 from collections import defaultdict
 from typing import Optional
 

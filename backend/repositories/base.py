@@ -1,4 +1,13 @@
-"""Base repository class for database operations."""
+"""
+Base repository class for database operations.
+
+Implements the Repository pattern: a thin layer between ORM models and
+business logic that encapsulates all SQL queries. Each method has both
+a synchronous version (for offline scripts) and an async version
+(prefixed with 'a') for FastAPI route handlers.
+
+Extend this class for model-specific queries — see TokenRepository.
+"""
 from typing import Any, Generic, Optional, TypeVar
 
 from sqlalchemy import Select, delete, func, select

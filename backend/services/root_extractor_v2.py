@@ -1,16 +1,28 @@
 """
-Enhanced root extraction service with multi-source verification.
+Multi-source Arabic root extraction with verification.
 
-This module implements robust root extraction from multiple online sources:
-- Quranic Arabic Corpus (corpus.quran.com)
-- Tanzil morphology data
-- Additional verification sources
+This is the largest module in the project (~1200 lines). It defines
+six extraction backends and a verification layer:
 
-Features:
-- Multi-source verification with consensus algorithm
-- Retry logic and rate limiting
-- Comprehensive error handling
-- Caching to minimize redundant API calls
+Extractors (each implements RootExtractor ABC):
+    QuranCorpusExtractor       – scrapes corpus.quran.com
+    OfflineCorpusCacheExtractor – reads local corpus_roots_cache.json
+    AlMaanyExtractor           – scrapes almaany.com dictionary
+    BahethExtractor            – scrapes baheth.info dictionary
+    PyArabicExtractor          – uses pyarabic library for morphology
+    AlKhalilExtractor          – uses pyarabic.araby for stemming
+
+Verification:
+    MultiSourceVerifier – runs all extractors, picks consensus root
+
+Orchestration:
+    RootExtractionService – high-level API used by tasks and scripts
+
+The service uses httpx for async HTTP, BeautifulSoup for scraping,
+and includes retry logic, rate limiting, and caching.
+
+NOTE: This module is large and could be split into separate files
+per extractor in a future refactoring pass.
 """
 
 import asyncio

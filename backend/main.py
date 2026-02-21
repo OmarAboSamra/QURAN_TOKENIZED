@@ -2,15 +2,23 @@
 FastAPI application entry point.
 
 This is the main FastAPI application that provides REST APIs for:
-- Token retrieval and search
-- Root lookup and analysis
-- Verse reconstruction
-- Statistics and metadata
+- Token retrieval and search (GET /quran/token, /quran/tokens, /quran/search)
+- Root lookup and analysis (GET /quran/root/{root})
+- Verse reconstruction from tokens (GET /quran/verse/{sura}/{aya})
+- Statistics and metadata (GET /quran/stats, /meta/health, /meta/info)
+- Background pipeline jobs via Celery (POST /pipeline/tokenize, etc.)
+
+The application is structured as:
+    main.py          → App creation, middleware, lifespan (this file)
+    api/             → Route handlers grouped by domain
+    models/          → SQLAlchemy ORM models (Token, Root, Verse)
+    repositories/    → Database query layer
+    services/        → Business logic (tokenizer, root extractor, etc.)
+    tasks/           → Celery background tasks
 
 Usage:
-    python backend/main.py
-    or
-    uvicorn backend.main:app --reload
+    python backend/main.py          # Direct run
+    uvicorn backend.main:app --reload  # Development with auto-reload
 """
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,8 +39,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Lifespan event handler for FastAPI.
     
-    This function runs on startup and shutdown to initialize
-    and cleanup resources.
+    Runs once on startup (before first request) and once on shutdown.
+    Startup: creates database tables if they don't exist.
+    Shutdown: placeholder for cleanup (closing pools, flushing caches).
+    
+    NOTE: configure_logging() from logging_config.py and the Prometheus
+    instrumentator from metrics.py are NOT wired here yet — these are
+    known gaps flagged for the next optimization pass.
     """
     # Startup
     settings = get_settings()
@@ -56,7 +69,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print("Shutting down...")
 
 
-# Create FastAPI application
+# ── Application factory ──────────────────────────────────────────
+# The app object is created at module level so that uvicorn can
+# import it directly as "backend.main:app".
 settings = get_settings()
 app = FastAPI(
     title=settings.api_title,
@@ -68,21 +83,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# ── CORS middleware ───────────────────────────────────────────────
+# Currently allows ALL origins for local development convenience.
+# TODO: use settings.cors_origins_list for production deployments.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],  # TODO: restrict in production via config
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers
+# ── Router registration ──────────────────────────────────────────
+# /meta/*    → Health checks and API info
+# /quran/*   → Core Qur'an data endpoints (tokens, verses, roots, search)
+# /pipeline/* → Background job management (Celery integration)
 app.include_router(routes_meta.router)
 app.include_router(routes_quran_enhanced.router)
 app.include_router(routes_pipeline.router)
 
-# Mount static files for demo
+# ── Static files ─────────────────────────────────────────────────
+# Serves the interactive demo frontend at /static/demo/index.html
 static_path = Path(__file__).parent / "static"
 if static_path.exists():
     app.mount("/static", StaticFiles(directory=str(static_path)), name="static")

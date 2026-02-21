@@ -1,4 +1,15 @@
-"""Celery tasks for Qur'an tokenization."""
+"""
+Celery tasks for Qur'an tokenization.
+
+Provides background tasks that tokenize entire surahs, with support
+for parallel chunking across multiple Celery workers.
+
+Key tasks:
+    tokenize_sura          – Tokenize one surah sequentially
+    tokenize_sura_chunk    – Tokenize a range of verses (worker subtask)
+    tokenize_sura_parallel – Split surah into chunks, fan out to workers
+    combine_tokenization   – Callback that merges chunk results
+"""
 import time
 from typing import Dict, List
 

@@ -1,4 +1,13 @@
-"""ORM model for Qur'an verses."""
+"""
+ORM model for Qur'an verses (ayat).
+
+The Verse table stores complete verse text and metadata. Currently
+the API reconstructs verse text by joining Token rows (which is the
+primary source of truth), so this table is not actively populated.
+
+Future use: store pre-computed verse text, translations, tafsir
+references, and other verse-level annotations.
+"""
 from datetime import datetime
 from typing import Optional
 
@@ -11,9 +20,11 @@ from backend.models.types import JSONType
 
 class Verse(Base):
     """
-    Represents a single verse (ayah) from the Qur'an.
+    A single verse (ayah) from the Qur'an.
     
-    Contains metadata about the verse and relationships to its constituent tokens.
+    Identified by (sura, aya) with a unique composite index.
+    The metadata_ JSON field is reserved for future expansions
+    like English translations, tafsir cross-references, etc.
     """
 
     __tablename__ = "verses"

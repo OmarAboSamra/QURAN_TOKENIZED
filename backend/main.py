@@ -85,11 +85,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Startup: creates database tables if they don't exist.
     Shutdown: placeholder for cleanup (closing pools, flushing caches).
     
-    NOTE: configure_logging() from logging_config.py and the Prometheus
-    instrumentator from metrics.py are NOT wired here yet — these are
-    known gaps flagged for the next optimization pass.
     """
     # Startup
+    from backend.logging_config import configure_logging
+    configure_logging()
+
     settings = get_settings()
     print("=" * 60)
     print(f"{settings.api_title} v{settings.api_version}")
@@ -134,15 +134,21 @@ app = FastAPI(
 )
 
 # ── CORS middleware ───────────────────────────────────────────────
-# Currently allows ALL origins for local development convenience.
-# TODO: use settings.cors_origins_list for production deployments.
+# Uses the comma-separated CORS_ORIGINS env var (default: "*").
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: restrict in production via config
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Prometheus metrics ────────────────────────────────────────────
+if settings.prometheus_enabled:
+    from backend.metrics import get_instrumentator
+    _instrumentator = get_instrumentator()
+    _instrumentator.instrument(app)
+    _instrumentator.expose(app, endpoint="/metrics")
 
 # ── Router registration ──────────────────────────────────────────
 # /meta/*    → Health checks and API info
@@ -151,6 +157,25 @@ app.add_middleware(
 app.include_router(routes_meta.router)
 app.include_router(routes_quran_enhanced.router)
 app.include_router(routes_pipeline.router)
+
+# ── Global exception handler for database errors (C5) ────────────
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+
+from backend.logging_config import get_logger
+
+_logger = get_logger("backend.main")
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_error_handler(request, exc: SQLAlchemyError):
+    """Return 503 instead of a raw 500 stack trace on DB errors."""
+    _logger.error("db_error", error=str(exc), path=str(request.url))
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database unavailable — please try again later"},
+    )
+
 
 # ── Static files ─────────────────────────────────────────────────
 # Serves the interactive demo frontend at /static/demo/index.html

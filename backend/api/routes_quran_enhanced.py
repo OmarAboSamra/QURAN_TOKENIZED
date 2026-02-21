@@ -21,10 +21,13 @@ Each endpoint:
 
 PATCH endpoints require the X-API-Key header when ADMIN_API_KEY is set.
 """
+import re
 import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, status
+from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.schemas import (
@@ -45,6 +48,7 @@ from backend.db import get_db_session
 from backend.logging_config import get_logger, log_cache_operation, log_request
 from backend.metrics import record_cache_operation, record_token_operation
 from backend.models import Token
+from backend.models.verse_model import Verse
 from backend.repositories.token_repository import TokenRepository
 from backend.services.morphology import levenshtein, normalize_arabic
 
@@ -84,7 +88,7 @@ async def get_token(
     db: AsyncSession = Depends(get_db_session),
 ) -> TokenResponse:
     """Get a single token by ID."""
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     token = await token_repo.aget_by_id(db, token_id)
 
@@ -95,7 +99,7 @@ async def get_token(
             detail=f"Token with ID {token_id} not found",
         )
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(logger, "GET", f"/quran/token/{token_id}", 200, duration_ms)
     record_token_operation("get_token", "success")
 
@@ -124,7 +128,7 @@ async def get_tokens(
     - root: Filter by Arabic root
     - search: Search in Arabic text (text_ar or normalized)
     """
-    start_time = time.time()
+    start_time = time.perf_counter()
     skip = (page - 1) * page_size
 
     # Get filtered tokens
@@ -145,7 +149,7 @@ async def get_tokens(
         search=search,
     )
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(
         logger,
         "GET",
@@ -178,7 +182,7 @@ async def get_verse(
     db: AsyncSession = Depends(get_db_session),
 ) -> VerseResponse:
     """Get a complete verse with all its tokens."""
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     # Try cache first
     cached = await cache.get_verse(sura, aya)
@@ -219,7 +223,7 @@ async def get_verse(
     # Cache the response
     await cache.set_verse(sura, aya, response_data)
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(logger, "GET", f"/quran/verse/{sura}/{aya}", 200, duration_ms)
 
     return VerseResponse(**response_data)
@@ -243,7 +247,7 @@ async def get_tokens_by_root(
     This endpoint is useful for finding all occurrences of words
     derived from the same root throughout the Qur'an.
     """
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     # Try cache first
     cached = await cache.get_tokens_by_root(root, page)
@@ -272,7 +276,7 @@ async def get_tokens_by_root(
     # Cache the response
     await cache.set_tokens_by_root(root, page, response_data)
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(
         logger,
         "GET",
@@ -303,13 +307,19 @@ async def search_tokens(
     Uses the FTS5 full-text index when available for fast ranked search,
     with automatic fallback to LIKE for databases without FTS5.
     """
-    start_time = time.time()
+    if not re.search(r'[\u0600-\u06FF]', q):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Search query must contain Arabic text",
+        )
+
+    start_time = time.perf_counter()
     skip = (page - 1) * page_size
 
     tokens = await token_repo.asearch_fts(db, q, skip, page_size)
     total = await token_repo.acount_fts(db, q)
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(
         logger,
         "GET",
@@ -363,7 +373,7 @@ async def find_similar_words(
     - **sample_text_ar**: an example with diacritics
     - **count**: how many tokens share this normalized form
     """
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     query_normalized = normalize_arabic(word)
 
@@ -382,8 +392,6 @@ async def find_similar_words(
     matches = matches[:limit]
 
     # Enrich results with root and sample info
-    from sqlalchemy import func, select
-
     results: list[SimilarWordEntry] = []
     for m in matches:
         # Get count + a sample token for each matching form
@@ -409,7 +417,7 @@ async def find_similar_words(
             count=count,
         ))
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(
         logger,
         "GET",
@@ -438,11 +446,13 @@ async def get_stats(
     db: AsyncSession = Depends(get_db_session),
 ) -> StatsResponse:
     """Get overall statistics about the dataset or for a specific sura."""
-    start_time = time.time()
+    start_time = time.perf_counter()
 
-    from sqlalchemy import func, select
-
-    from backend.models import Verse
+    # C11: check cache first (5-minute TTL)
+    cache_key = f"stats:sura:{sura}" if sura else "stats:global"
+    cached_stats = await cache.get_json(cache_key)
+    if cached_stats:
+        return StatsResponse(**cached_stats)
 
     if sura:
         # Sura-specific stats
@@ -487,15 +497,20 @@ async def get_stats(
         root_result = await db.execute(root_count_query)
         total_roots = root_result.scalar() or 0
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(logger, "GET", "/quran/stats", 200, duration_ms, sura=sura)
 
-    return StatsResponse(
-        total_tokens=total_tokens,
-        total_verses=total_verses,
-        total_roots=total_roots,
-        suras=114,
-    )
+    response_data = {
+        "total_tokens": total_tokens,
+        "total_verses": total_verses,
+        "total_roots": total_roots,
+        "suras": 114,
+    }
+
+    # Cache for 5 minutes
+    await cache.set_json(cache_key, response_data, ttl=300)
+
+    return StatsResponse(**response_data)
 
 
 # ── PATCH endpoints (D5: manual corrections) ─────────────────────
@@ -521,7 +536,7 @@ async def update_token(
     Root.token_count counters are adjusted. Related cache keys are
     invalidated.
     """
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     token = await token_repo.aget_by_id(db, token_id)
     if not token:
@@ -554,7 +569,7 @@ async def update_token(
     if body.root and body.root != old_root:
         await cache.delete_pattern(f"tokens_root:{body.root}:*")
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(logger, "PATCH", f"/quran/token/{token_id}", 200, duration_ms)
     record_token_operation("update_token", "success")
 
@@ -579,7 +594,7 @@ async def update_root(
     The root row must already exist (created during root extraction or
     when a token's root is corrected via PATCH /quran/token/{id}).
     """
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     root_obj = await token_repo.aget_root_by_name(db, root)
     if not root_obj:
@@ -606,7 +621,7 @@ async def update_root(
     # Invalidate cached token lists for this root
     await cache.delete_pattern(f"tokens_root:{root}:*")
 
-    duration_ms = (time.time() - start_time) * 1000
+    duration_ms = (time.perf_counter() - start_time) * 1000
     log_request(logger, "PATCH", f"/quran/root/{root}", 200, duration_ms)
 
     return RootResponse(

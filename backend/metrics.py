@@ -7,10 +7,8 @@ token operations, cache hits/misses, and database query latency.
 The helper functions (record_root_extraction, record_token_operation, etc.)
 are used by route handlers to emit metrics.
 
-KNOWN ISSUE: get_instrumentator() creates a FastAPI Instrumentator but
-it is never wired into the app via instrumentator.instrument(app) in
-main.py. The .add() calls also use an incorrect API. This is flagged
-for the next optimization pass.
+Wired in main.py: when PROMETHEUS_ENABLED=true the instrumentator is
+attached to the FastAPI app via instrument() / expose().
 """
 from typing import Optional
 
@@ -81,15 +79,6 @@ def get_instrumentator() -> Instrumentator:
             env_var_name="ENABLE_METRICS",
             inprogress_name="quran_api_requests_inprogress",
             inprogress_labels=True,
-        )
-        
-        # Add custom metrics
-        _instrumentator.add(
-            Instrumentator.metrics.default(),
-            # Add request duration with custom buckets
-            Instrumentator.metrics.latency(
-                buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0],
-            ),
         )
     
     return _instrumentator

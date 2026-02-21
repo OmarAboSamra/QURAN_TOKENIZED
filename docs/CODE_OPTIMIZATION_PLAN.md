@@ -5,9 +5,11 @@
 > and can be implemented independently.
 > Ordered by priority (bugs/broken code first, then performance, then style).
 
+> **Status**: ALL 14 ITEMS IMPLEMENTED — see commit history for details.
+
 ---
 
-## C1 · Wire `configure_logging()` in App Startup (BUG)
+## C1 · Wire `configure_logging()` in App Startup (BUG) ✅ DONE
 
 **File**: `backend/main.py` → lifespan function
 
@@ -22,7 +24,7 @@ configure_logging()
 
 ---
 
-## C2 · Wire Prometheus Instrumentator (BUG)
+## C2 · Wire Prometheus Instrumentator (BUG) ✅ DONE
 
 **File**: `backend/metrics.py` + `backend/main.py`
 
@@ -41,7 +43,7 @@ Also fix `get_instrumentator()` to use the correct prometheus-fastapi-instrument
 
 ---
 
-## C3 · Use `settings.cors_origins_list` Instead of `["*"]` (BUG)
+## C3 · Use `settings.cors_origins_list` Instead of `["*"]` (BUG) ✅ DONE
 
 **File**: `backend/main.py` line with `allow_origins=["*"]`
 
@@ -58,7 +60,7 @@ app.add_middleware(
 
 ---
 
-## C4 · Split `root_extractor_v2.py` Into Separate Modules (REFACTOR)
+## C4 · Split `root_extractor_v2.py` Into Separate Modules (REFACTOR) ✅ DONE
 
 **File**: `backend/services/root_extractor_v2.py` (1204 lines)
 
@@ -82,7 +84,7 @@ backend/services/
 
 ---
 
-## C5 · Add Proper Error Handling in Route Handlers (IMPROVEMENT)
+## C5 · Add Proper Error Handling in Route Handlers (IMPROVEMENT) ✅ DONE
 
 **File**: `backend/api/routes_quran_enhanced.py`
 
@@ -104,7 +106,7 @@ async def get_tokens(...):
 
 ---
 
-## C6 · Replace `time.time()` with `time.perf_counter()` (IMPROVEMENT)
+## C6 · Replace `time.time()` with `time.perf_counter()` (IMPROVEMENT) ✅ DONE
 
 **File**: `backend/api/routes_quran_enhanced.py` (6 occurrences)
 
@@ -114,7 +116,7 @@ async def get_tokens(...):
 
 ---
 
-## C7 · Avoid Duplicate Imports in `get_stats` Endpoint (CLEANUP)
+## C7 · Avoid Duplicate Imports in `get_stats` Endpoint (CLEANUP) ✅ DONE
 
 **File**: `backend/api/routes_quran_enhanced.py`, `get_stats()` function
 
@@ -130,7 +132,7 @@ async def get_stats(...):
 
 ---
 
-## C8 · Add `__repr__` to Verse Model (CLEANUP)
+## C8 · Add `__repr__` to Verse Model (CLEANUP) ✅ DONE (already adequate)
 
 **File**: `backend/models/verse_model.py`
 
@@ -140,7 +142,7 @@ async def get_stats(...):
 
 ---
 
-## C9 · Add Type Hints to `root_extractor_v2.py` Functions (IMPROVEMENT)
+## C9 · Add Type Hints to `root_extractor_v2.py` Functions (IMPROVEMENT) ✅ DONE
 
 **File**: `backend/services/root_extractor_v2.py`
 
@@ -150,7 +152,7 @@ async def get_stats(...):
 
 ---
 
-## C10 · Use `selectinload` for Verse → Token Queries (PERFORMANCE)
+## C10 · Use `selectinload` for Verse → Token Queries (PERFORMANCE) ✅ DONE (implemented in D1)
 
 **File**: `backend/repositories/token_repository.py`
 
@@ -160,7 +162,7 @@ async def get_stats(...):
 
 ---
 
-## C11 · Cache `get_stats()` Response (PERFORMANCE)
+## C11 · Cache `get_stats()` Response (PERFORMANCE) ✅ DONE
 
 **File**: `backend/api/routes_quran_enhanced.py`
 
@@ -177,7 +179,7 @@ await cache.set_json("stats:global", response_data, ttl=300)  # 5 min
 
 ---
 
-## C12 · Add Input Validation for Arabic Text (IMPROVEMENT)
+## C12 · Add Input Validation for Arabic Text (IMPROVEMENT) ✅ DONE
 
 **File**: `backend/api/routes_quran_enhanced.py`, search endpoint
 
@@ -192,7 +194,7 @@ if not re.search(r'[\u0600-\u06FF]', q):
 
 ---
 
-## C13 · Remove Unused `arabic_reshaper` Import (CLEANUP)
+## C13 · Remove Unused `arabic_reshaper` Import (CLEANUP) ✅ DONE
 
 **File**: `backend/services/tokenizer_service.py`
 
@@ -202,7 +204,7 @@ if not re.search(r'[\u0600-\u06FF]', q):
 
 ---
 
-## C14 · Add Pagination Metadata to All List Responses (IMPROVEMENT)
+## C14 · Add Pagination Metadata to All List Responses (IMPROVEMENT) ✅ DONE
 
 **File**: `backend/api/schemas.py`
 

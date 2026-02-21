@@ -7,7 +7,7 @@ validation from SQLAlchemy ORM instances via model_validate().
 """
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class TokenResponse(BaseModel):
@@ -40,6 +40,12 @@ class TokenListResponse(BaseModel):
     page: int
     page_size: int
     filters: dict = Field(default_factory=dict)
+
+    @computed_field
+    @property
+    def total_pages(self) -> int:
+        """Number of pages based on total and page_size."""
+        return (self.total + self.page_size - 1) // self.page_size if self.page_size else 0
 
 
 class VerseResponse(BaseModel):

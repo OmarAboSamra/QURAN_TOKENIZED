@@ -23,8 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import arabic_reshaper
-
 
 @dataclass
 class WordToken:

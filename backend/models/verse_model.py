@@ -1,21 +1,28 @@
 """
 ORM model for Qur'an verses (ayat).
 
-The Verse table stores complete verse text and metadata. Currently
-the API reconstructs verse text by joining Token rows (which is the
-primary source of truth), so this table is not actively populated.
+The Verse table stores complete verse text and metadata.
 
-Future use: store pre-computed verse text, translations, tafsir
-references, and other verse-level annotations.
+Relationships:
+    Verse.tokens → list[Token]  (one-to-many via Token.verse_id FK)
+
+The tokens relationship provides direct access to all words in a verse
+without manual filtering by sura/aya. Verse rows are created during
+tokenization (see scripts/tokenize_quran.py or the migration script).
 """
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import DateTime, Index, Integer, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db import Base
 from backend.models.types import JSONType
+
+if TYPE_CHECKING:
+    from backend.models.token_model import Token
 
 
 class Verse(Base):
@@ -92,6 +99,15 @@ class Verse(Base):
         Index("ix_verses_sura_aya", "sura", "aya", unique=True),
         Index("ix_verses_word_count", "word_count"),
     )
+
+    # ── ORM Relationships ──────────────────────────────────────────
+    tokens: Mapped[list["Token"]] = relationship(
+        "Token",
+        back_populates="verse",
+        lazy="select",
+        order_by="Token.position",
+    )
+    """All word tokens in this verse, ordered by position."""
 
     def __repr__(self) -> str:
         """String representation."""

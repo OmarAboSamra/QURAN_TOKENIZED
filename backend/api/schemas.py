@@ -20,8 +20,9 @@ class TokenResponse(BaseModel):
     text_ar: str
     normalized: str
     root: Optional[str] = None
+    root_id: Optional[int] = None
+    verse_id: Optional[int] = None
     status: str
-    references: Optional[list[int]] = None
     interpretations: Optional[dict] = None
 
     class Config:

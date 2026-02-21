@@ -2,31 +2,33 @@
 ORM model for Arabic roots.
 
 The Root table provides a reverse index: given a root string like "كتب",
-quickly find how many tokens share it and what it means.
+quickly find all tokens that share it via the `tokens` relationship.
 
-Design note:
-    token_ids is a legacy JSON column that stores a flat list of Token IDs.
-    For roots with thousands of occurrences this doesn't scale well.
-    A proper many-to-many relationship (via Token.root FK) is preferred
-    for production queries — the API already queries Token directly.
+Relationships:
+    Root.tokens → list[Token]  (one-to-many via Token.root_id FK)
 """
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import DateTime, Index, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db import Base
 from backend.models.types import JSONType
+
+if TYPE_CHECKING:
+    from backend.models.token_model import Token
 
 
 class Root(Base):
     """
     An Arabic root with aggregated metadata.
     
-    Each root (e.g. كتب, قرأ) appears once in this table. The
-    token_count field caches how many tokens share this root for
-    fast statistics without counting the Token table.
+    Each root (e.g. كتب, قرأ) appears once in this table. Use the
+    `tokens` relationship to get all Token rows sharing this root.
+    The `token_count` field is a denormalized counter for fast stats.
     """
 
     __tablename__ = "roots"
@@ -50,12 +52,13 @@ class Root(Base):
         comment="English meaning or definition of the root",
     )
 
-    # Compressed list of token IDs (legacy - prefer using relationship)
+    # DEPRECATED: Use the `tokens` relationship instead.
+    # Kept for backward compatibility with old data; not populated by new code.
     token_ids: Mapped[Optional[list]] = mapped_column(
-        "tokens",  # Keep same column name for backward compatibility
+        "tokens_legacy",  # Renamed column to avoid clash with relationship name
         JSONType,
         nullable=True,
-        comment="List of token IDs that share this root (legacy field)",
+        comment="DEPRECATED – use tokens relationship via Token.root_id",
     )
 
     # Statistics
@@ -91,6 +94,15 @@ class Root(Base):
     __table_args__ = (
         Index("ix_roots_token_count", "token_count"),
     )
+
+    # ── ORM Relationships ──────────────────────────────────────────
+    tokens: Mapped[list["Token"]] = relationship(
+        "Token",
+        back_populates="root_rel",
+        lazy="select",
+        order_by="Token.sura, Token.aya, Token.position",
+    )
+    """All Token rows that share this root (via Token.root_id FK)."""
 
     def __repr__(self) -> str:
         """String representation of root."""

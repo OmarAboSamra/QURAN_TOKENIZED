@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.config import get_settings
 from backend.db import get_sync_session_maker, init_db
-from backend.models import Token, TokenStatus
+from backend.models import Token, TokenStatus, Verse
 from backend.services import TokenizerService
 
 
@@ -104,10 +104,33 @@ def main() -> None:
             
             SessionMaker = get_sync_session_maker()
             with SessionMaker() as session:
-                # Clear existing tokens
+                # Clear existing data
                 session.query(Token).delete()
+                session.query(Verse).delete()
+
+                # Group tokens by (sura, aya) to create Verse rows (D3)
+                from collections import defaultdict
+                verse_groups: dict[tuple[int, int], list] = defaultdict(list)
+                for token in tokens:
+                    verse_groups[(token.sura, token.aya)].append(token)
                 
-                # Add new tokens
+                # Create Verse rows first so we can set verse_id on tokens
+                verse_id_lookup: dict[tuple[int, int], int] = {}
+                for (sura, aya), verse_tokens in sorted(verse_groups.items()):
+                    text_ar = " ".join(t.text_ar for t in verse_tokens)
+                    text_normalized = " ".join(t.normalized for t in verse_tokens)
+                    verse = Verse(
+                        sura=sura,
+                        aya=aya,
+                        text_ar=text_ar,
+                        text_normalized=text_normalized,
+                        word_count=len(verse_tokens),
+                    )
+                    session.add(verse)
+                    session.flush()  # Get the auto-generated verse.id
+                    verse_id_lookup[(sura, aya)] = verse.id
+
+                # Create Token rows with verse_id FK set
                 for token in tokens:
                     db_token = Token(
                         sura=token.sura,
@@ -116,11 +139,12 @@ def main() -> None:
                         text_ar=token.text_ar,
                         normalized=token.normalized,
                         status=TokenStatus.MISSING.value,
+                        verse_id=verse_id_lookup.get((token.sura, token.aya)),
                     )
                     session.add(db_token)
                 
                 session.commit()
-                print(f"[OK] Saved {len(tokens)} tokens to database")
+                print(f"[OK] Saved {len(tokens)} tokens + {len(verse_id_lookup)} verses to database")
         
         print()
         print("Next steps:")

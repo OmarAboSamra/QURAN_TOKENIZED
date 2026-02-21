@@ -159,22 +159,29 @@ async def get_verse(
 
     record_cache_operation("get", "miss")
 
-    # Fetch from database
-    tokens = await token_repo.aget_verse_tokens(db, sura, aya)
+    # Try the Verse table first (populated by migration or tokenize_quran.py).
+    # This loads the verse + its tokens in a single query via selectinload.
+    verse_obj = await token_repo.aget_verse(db, sura, aya)
 
-    if not tokens:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Verse {sura}:{aya} not found",
-        )
+    if verse_obj and verse_obj.tokens:
+        tokens = verse_obj.tokens
+        text_ar = verse_obj.text_ar
+    else:
+        # Fallback: reconstruct from Token table (no Verse row yet)
+        tokens = await token_repo.aget_verse_tokens(db, sura, aya)
+        if not tokens:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Verse {sura}:{aya} not found",
+            )
+        text_ar = " ".join(t.text_ar for t in tokens)
 
-    # Reconstruct verse text
-    text_ar = " ".join(t.text_ar for t in tokens)
+    token_dicts = [TokenResponse.model_validate(t).model_dump() for t in tokens]
 
     response_data = {
         "sura": sura,
         "aya": aya,
-        "tokens": [TokenResponse.model_validate(t) for t in tokens],
+        "tokens": token_dicts,
         "text_ar": text_ar,
         "word_count": len(tokens),
     }
@@ -222,10 +229,12 @@ async def get_tokens_by_root(
     tokens = await token_repo.aget_by_root(db, root, skip, page_size)
     total_count = await token_repo.acount_filtered(db, root=root)
 
+    token_dicts = [TokenResponse.model_validate(t).model_dump() for t in tokens]
+
     response_data = {
         "root": root,
         "total_count": total_count,
-        "tokens": [TokenResponse.model_validate(t) for t in tokens],
+        "tokens": token_dicts,
         "page": page,
         "page_size": page_size,
     }
@@ -299,19 +308,24 @@ async def get_stats(
     """Get overall statistics about the dataset or for a specific sura."""
     start_time = time.time()
 
-    # Count distinct verses
     from sqlalchemy import func, select
 
-    from backend.models import Token
+    from backend.models import Verse
 
     if sura:
         # Sura-specific stats
         total_tokens = await token_repo.acount_filtered(db, sura=sura)
         
-        # Count distinct verses in this sura
-        verse_subq = select(Token.sura, Token.aya).where(Token.sura == sura).distinct().subquery()
-        verse_result = await db.execute(select(func.count()).select_from(verse_subq))
+        # Count verses from the Verse table (preferred) or fall back to Token
+        verse_count_q = select(func.count()).select_from(Verse).where(Verse.sura == sura)
+        verse_result = await db.execute(verse_count_q)
         total_verses = verse_result.scalar() or 0
+
+        if total_verses == 0:
+            # Fallback: count distinct (sura, aya) from tokens
+            verse_subq = select(Token.sura, Token.aya).where(Token.sura == sura).distinct().subquery()
+            verse_result = await db.execute(select(func.count()).select_from(verse_subq))
+            total_verses = verse_result.scalar() or 0
         
         # Count distinct roots in this sura
         root_count_query = select(func.count(func.distinct(Token.root))).where(
@@ -324,10 +338,15 @@ async def get_stats(
         # Overall stats
         total_tokens = await token_repo.acount(db)
 
-        # Count distinct verses
-        verse_subq = select(Token.sura, Token.aya).distinct().subquery()
-        verse_result = await db.execute(select(func.count()).select_from(verse_subq))
+        # Count verses from Verse table (preferred) or fall back to Token
+        verse_count_q = select(func.count()).select_from(Verse)
+        verse_result = await db.execute(verse_count_q)
         total_verses = verse_result.scalar() or 0
+
+        if total_verses == 0:
+            verse_subq = select(Token.sura, Token.aya).distinct().subquery()
+            verse_result = await db.execute(select(func.count()).select_from(verse_subq))
+            total_verses = verse_result.scalar() or 0
 
         # Count distinct roots
         root_count_query = select(func.count(func.distinct(Token.root))).where(

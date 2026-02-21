@@ -64,25 +64,31 @@ def main() -> None:
         )
         print(f"✓ Built references for {len(token_references)} tokens")
         
-        # Update Token table with references
-        for token in tokens:
-            if token.id in token_references:
-                token.references = token_references[token.id]
-        
-        # Update or create Root entries
-        for root, token_ids in root_index.items():
+        # Update or create Root entries and build root_id lookup
+        root_id_lookup: dict[str, int] = {}
+        for root, token_ids_list in root_index.items():
             root_obj = session.query(Root).filter(Root.root == root).first()
             
             if root_obj:
-                root_obj.tokens = token_ids
-                root_obj.token_count = len(token_ids)
+                root_obj.token_count = len(token_ids_list)
             else:
                 root_obj = Root(
                     root=root,
-                    tokens=token_ids,
-                    token_count=len(token_ids),
+                    token_count=len(token_ids_list),
                 )
                 session.add(root_obj)
+                session.flush()  # Get auto-generated root_obj.id
+            
+            root_id_lookup[root] = root_obj.id
+        
+        # Set root_id FK on tokens (D1) and legacy references (D4 compat)
+        for token in tokens:
+            # Set the FK relationship
+            if token.root and token.root in root_id_lookup:
+                token.root_id = root_id_lookup[token.root]
+            # Keep legacy references for backward compat
+            if token.id in token_references:
+                token.references = token_references[token.id]
         
         # Commit changes
         session.commit()

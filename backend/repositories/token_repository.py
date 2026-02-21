@@ -13,9 +13,10 @@ from typing import Optional
 
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.models.token_model import Token, TokenStatus
+from backend.models.verse_model import Verse
 from backend.repositories.base import BaseRepository
 
 
@@ -190,10 +191,11 @@ class TokenRepository(BaseRepository[Token]):
         sura: int,
         aya: int,
     ) -> list[Token]:
-        """Get all tokens for a specific verse (async)."""
+        """Get all tokens for a specific verse (async), eager-loading root_rel."""
         stmt = (
             select(Token)
             .where(Token.sura == sura, Token.aya == aya)
+            .options(selectinload(Token.root_rel))
             .order_by(Token.position)
         )
         result = await session.execute(stmt)
@@ -206,10 +208,11 @@ class TokenRepository(BaseRepository[Token]):
         skip: int = 0,
         limit: int = 100,
     ) -> list[Token]:
-        """Get all tokens with a specific root (async)."""
+        """Get all tokens with a specific root (async), eager-loading verse."""
         stmt = (
             select(Token)
             .where(Token.root == root)
+            .options(selectinload(Token.verse))
             .order_by(Token.sura, Token.aya, Token.position)
             .offset(skip)
             .limit(limit)
@@ -302,3 +305,20 @@ class TokenRepository(BaseRepository[Token]):
 
         result = await session.execute(stmt)
         return result.scalar() or 0
+
+    # ── Verse-aware queries ────────────────────────────────────────
+
+    async def aget_verse(
+        self,
+        session: AsyncSession,
+        sura: int,
+        aya: int,
+    ) -> Optional[Verse]:
+        """Get a Verse row by sura/aya, eager-loading its tokens."""
+        stmt = (
+            select(Verse)
+            .where(Verse.sura == sura, Verse.aya == aya)
+            .options(selectinload(Verse.tokens))
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()

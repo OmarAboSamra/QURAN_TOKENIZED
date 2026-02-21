@@ -8,23 +8,33 @@ workflow is:
     1. Tokenize  – split raw text into words, store text_ar + normalized
     2. Extract   – query multiple Arabic root dictionaries, store root_sources
     3. Verify    – compare sources, set consensus root + status
-    4. Link      – build cross-references to other words sharing the same root
+    4. Link      – set root_id FK to associate token with its Root row
     5. Annotate  – (future) add interpretations, translations, context notes
+
+Relationships:
+    Token.root_rel  → Root  (many-to-one via root_id FK)
+    Token.verse     → Verse (many-to-one via verse_id FK)
 
 Status lifecycle:
     MISSING → VERIFIED         (sources agree)
     MISSING → DISCREPANCY      (sources disagree but majority exists)
     MISSING → MANUAL_REVIEW    (low confidence or no majority)
 """
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, Index, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db import Base
 from backend.models.types import JSONType
+
+if TYPE_CHECKING:
+    from backend.models.root_model import Root
+    from backend.models.verse_model import Verse
 
 
 class TokenStatus(str, Enum):
@@ -45,9 +55,10 @@ class Token(Base):
     root extraction results from multiple sources.
     
     Key fields for the analysis use case:
-      - root:          the consensus Arabic root (e.g. كتب)
-      - root_sources:  JSON {"qurancorpus": "كتب", "almaany": "كتب", ...}
-      - references:    list of other token IDs sharing the same root
+      - root:            the consensus Arabic root string (e.g. كتب)
+      - root_id:         FK to the Root table for relational queries
+      - verse_id:        FK to the Verse table for verse-level access
+      - root_sources:    JSON {"qurancorpus": "كتب", "almaany": "كتب", ...}
       - interpretations: (future) meanings, translations, usage notes
     """
 
@@ -83,7 +94,14 @@ class Token(Base):
         String(50),
         nullable=True,
         index=True,
-        comment="Verified Arabic root",
+        comment="Verified Arabic root (denormalized for fast filtering)",
+    )
+    root_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("roots.id", name="fk_tokens_root_id"),
+        nullable=True,
+        index=True,
+        comment="FK to roots table for relational queries",
     )
     root_sources: Mapped[Optional[dict]] = mapped_column(
         JSONType,
@@ -100,11 +118,21 @@ class Token(Base):
         comment="Current status of root extraction",
     )
 
-    # References to other tokens with same root
+    # Verse FK — links this token to its parent verse
+    verse_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("verses.id", name="fk_tokens_verse_id"),
+        nullable=True,
+        index=True,
+        comment="FK to verses table",
+    )
+
+    # DEPRECATED: Use root_id relationship instead.
+    # Kept for backward compatibility; not populated by new code.
     references: Mapped[Optional[list]] = mapped_column(
         JSONType,
         nullable=True,
-        comment="List of token IDs sharing the same root",
+        comment="DEPRECATED – list of token IDs sharing the same root",
     )
 
     # Future: meaning and translation fields
@@ -132,7 +160,26 @@ class Token(Base):
         Index("ix_tokens_sura_aya", "sura", "aya"),
         Index("ix_tokens_sura_aya_position", "sura", "aya", "position", unique=True),
         Index("ix_tokens_root_status", "root", "status"),
+        Index("ix_tokens_root_id", "root_id"),
+        Index("ix_tokens_verse_id", "verse_id"),
     )
+
+    # ── ORM Relationships ──────────────────────────────────────────
+    # Use these for JOINs and eager loading instead of manual queries.
+
+    root_rel: Mapped[Optional["Root"]] = relationship(
+        "Root",
+        back_populates="tokens",
+        lazy="select",
+    )
+    """The Root object this token belongs to (via root_id FK)."""
+
+    verse: Mapped[Optional["Verse"]] = relationship(
+        "Verse",
+        back_populates="tokens",
+        lazy="select",
+    )
+    """The Verse object this token belongs to (via verse_id FK)."""
 
     def __repr__(self) -> str:
         """String representation of token."""

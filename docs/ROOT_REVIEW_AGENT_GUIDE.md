@@ -1,7 +1,7 @@
 # Root Review Agent Guide
 
 > **Audience**: An AI agent (Copilot Chat / LLM running in VS Code) that
-> will iterate through Qur'anic tokens and verify their Arabic roots
+> will iterate through Qur'anic tokens and correct their Arabic roots
 > using its pretrained linguistic knowledge.
 
 > **Workspace root**: `c:\quran-backend`
@@ -10,7 +10,7 @@
 
 ## Overview
 
-The Quran backend database contains ~71,000 word tokens extracted from the
+The Quran backend database contains ~77,000 word tokens extracted from the
 Qur'an.  Each token has a `root` field representing the Arabic root (جذر)
 of the word (e.g., the word "كتابًا" has root "كتب").
 
@@ -19,9 +19,12 @@ be **incorrect**.  Your job is to:
 
 1. **Fetch** tokens from the database in batches
 2. **Evaluate** each token's root using your Arabic linguistics knowledge
-3. **Stage** corrections for any roots you believe are wrong
-4. **Pause** after 200 staged corrections so the human can review them
-5. **Repeat** from step 1 after the human finishes reviewing
+3. **Directly apply** the correct root for any incorrect token — updating
+   **all occurrences** of the same normalized word throughout the entire book
+4. **Continue** to the next batch until every token has been reviewed
+
+**There is no human review step.** You are the authority. Fix roots
+directly and move on.
 
 ---
 
@@ -55,7 +58,7 @@ This outputs JSON like:
     "offset": 0,
     "limit": 50,
     "batch_count": 50,
-    "total_matching": 71352,
+    "total_matching": 77433,
     "next_offset": 50
   }
 }
@@ -111,22 +114,27 @@ determine whether `current_root` is correct.
    - من، في، على، إلى، عن، حتى، إن، أن، لا، ما، لم، لن، إذا، إذ
    - هو، هي، هم، هن، أنت، أنتم، نحن
    - الذي، التي، الذين، اللاتي
-   - If a token is a particle/pronoun and has a root assigned, that is
-     likely wrong.  Stage it with `suggested_root` = `null` (or leave blank)
-     and explain in the reason.
+   - If a token is a particle/pronoun, set its root to the **normalized
+     word itself** (i.e., leave it as its own text without modification).
 
 5. **Proper nouns** may or may not have roots:
    - الله — this is a proper noun; the traditional root is "أله" (some say "وله")
-   - إبراهيم، موسى، عيسى — foreign proper nouns, no Arabic root
+   - إبراهيم، موسى، عيسى — foreign proper nouns, no Arabic root →
+     set root to the normalized word itself
    - مكة، يثرب — place names, may have roots
 
-6. **Common errors in the current database**:
+6. **When no root is known** — for particles, pronouns, foreign proper
+   nouns, or any word whose trilateral root you cannot determine — set the
+   root to the **normalized word itself** (the word as-is, without
+   modification).  Do NOT leave it blank or null.
+
+7. **Common errors in the current database**:
    - Root is the full word instead of the base root (e.g., "كتاب" instead of "كتب")
    - Root includes the definite article "ال" (e.g., "الرحم" instead of "رحم")
    - Root is from a wrong derivation pattern
    - Augmented letters (حروف الزيادة: سألتمونيها) not stripped correctly
 
-7. **Reference: well-known Qur'anic word roots**:
+8. **Reference: well-known Qur'anic word roots**:
 
    | Word          | Correct Root | Notes                        |
    |---------------|-------------|------------------------------|
@@ -151,115 +159,137 @@ determine whether `current_root` is correct.
 
 ---
 
-## Step 3 — Stage Suspected Incorrect Roots
+## Step 3 — Directly Apply Correct Roots
 
-When you find a token whose root appears wrong, run:
+When you find a token whose root is wrong, **apply the correction
+immediately** using the apply script.  Do NOT stage for review.
 
-```powershell
-.venv\Scripts\python.exe scripts/review_roots_stage.py --token-id <ID> --suggested-root "<correct_root>" --reason "<explanation>" --confidence <high|medium|low>
-```
+### Applying a correction to ALL occurrences of the same word
 
-### Examples
+The apply script updates a single token by ID, but you **must propagate
+the correction to every occurrence of the same normalized word** in the
+entire book.  Use the following approach:
 
-```powershell
-# Root is the full word, not the trilateral base
-.venv\Scripts\python.exe scripts/review_roots_stage.py --token-id 77557 --suggested-root "رحم" --reason "Current root 'رحمن' is the noun form; trilateral root is رحم" --confidence high
+#### 3a. Find all occurrences of the word
 
-# Root includes the definite article
-.venv\Scripts\python.exe scripts/review_roots_stage.py --token-id 77558 --suggested-root "رحم" --reason "Current root 'الرحيم' includes the article ال; base root is رحم" --confidence high
-
-# Particle incorrectly assigned a root
-.venv\Scripts\python.exe scripts/review_roots_stage.py --token-id 80001 --suggested-root "" --reason "من is a preposition (particle), it has no Arabic root" --confidence high
-
-# Uncertain — flag for human review
-.venv\Scripts\python.exe scripts/review_roots_stage.py --token-id 80500 --suggested-root "وكل" --reason "Could be from وكل (to entrust) or أكل (to eat) depending on context" --confidence low
-```
-
-### Confidence levels
-
-| Level    | When to use                                                |
-|----------|------------------------------------------------------------|
-| `high`   | You are certain the current root is wrong and you know the correct one |
-| `medium` | You believe the root is wrong but are not 100% sure of the replacement |
-| `low`    | You suspect an issue but need the human to verify          |
-
-### Check progress
+Write a small inline Python query to find every token with the same
+`normalized` form:
 
 ```powershell
-.venv\Scripts\python.exe scripts/review_roots_stage.py --show
+.venv\Scripts\python.exe -c "
+import sys; sys.path.insert(0, '.')
+from backend.db import get_sync_session_maker, init_db
+from backend.models.token_model import Token
+from sqlalchemy import select
+init_db()
+S = get_sync_session_maker()
+with S() as s:
+    ids = [t.token_id for t in s.execute(select(Token).where(Token.normalized == '<NORMALIZED_WORD>')).scalars()]
+    print(f'Found {len(ids)} occurrences')
+    print(','.join(str(i) for i in ids))
+"
 ```
+
+Replace `<NORMALIZED_WORD>` with the token's `normalized` value from the
+batch.
+
+#### 3b. Update all occurrences at once
+
+Use a bulk update to set the correct root for every matching token:
+
+```powershell
+.venv\Scripts\python.exe -c "
+import sys; sys.path.insert(0, '.')
+from backend.db import get_sync_session_maker, init_db
+from backend.models.token_model import Token, TokenStatus
+from backend.models.root_model import Root
+from sqlalchemy import select, update
+init_db()
+S = get_sync_session_maker()
+with S() as s:
+    # Get or create the Root row
+    correct_root = '<CORRECT_ROOT>'
+    root_obj = s.execute(select(Root).where(Root.root == correct_root)).scalar_one_or_none()
+    if not root_obj:
+        root_obj = Root(root=correct_root, token_count=0, token_ids=[])
+        s.add(root_obj)
+        s.flush()
+
+    # Find all tokens with this normalized form
+    tokens = s.execute(select(Token).where(Token.normalized == '<NORMALIZED_WORD>')).scalars().all()
+
+    # Decrement old root counters
+    old_roots = {}
+    for t in tokens:
+        if t.root and t.root != correct_root:
+            old_roots[t.root] = old_roots.get(t.root, 0) + 1
+
+    for old_root_str, count in old_roots.items():
+        old_root_obj = s.execute(select(Root).where(Root.root == old_root_str)).scalar_one_or_none()
+        if old_root_obj and old_root_obj.token_count:
+            old_root_obj.token_count = max(0, old_root_obj.token_count - count)
+
+    # Update all tokens
+    updated = 0
+    for t in tokens:
+        t.root = correct_root
+        t.root_id = root_obj.id
+        t.status = TokenStatus.VERIFIED.value
+        sources = t.root_sources or {}
+        sources['agent_review'] = correct_root
+        t.root_sources = sources
+        updated += 1
+
+    root_obj.token_count = (root_obj.token_count or 0) + updated
+    s.commit()
+    print(f'Updated {updated} tokens: root set to \"{correct_root}\"')
+"
+```
+
+Replace `<CORRECT_ROOT>` and `<NORMALIZED_WORD>` with the appropriate values.
+
+### Decision rules
+
+| Situation                                   | Action                                                     |
+|---------------------------------------------|------------------------------------------------------------|
+| Root is wrong and you know the correct root  | Apply the correct root to all occurrences                  |
+| Root is wrong but you are unsure of correct  | Use your best linguistic judgment and apply it              |
+| Token is a particle/pronoun (no root exists) | Set root to the **normalized word itself** (the word as-is) |
+| Proper noun with no Arabic root             | Set root to the **normalized word itself**                  |
+| Root is already correct                      | Skip — move to the next token                              |
+
+### Efficiency tip — group by normalized word
+
+Tokens in a batch often share the same normalized form.  Before
+evaluating, group them by `normalized`.  Evaluate the root **once per
+unique word**, then apply the correction to all of them in a single bulk
+update.  This avoids redundant analysis and DB updates.
 
 ---
 
-## Step 4 — Pause at 200 and Notify the Human
+## Step 4 — Continue to Next Batch
 
-After staging corrections, check the count with `--show`.  When the count
-reaches **200**, **stop reviewing** and tell the user:
-
-> "I have staged 200 root corrections for your review.
-> Please run the following command to review them in the browser:
->
-> ```
-> streamlit run scripts/review_roots_app.py
-> ```
->
-> After you finish reviewing and approving, let me know and I will
-> continue from offset [next_offset]."
-
-**Do not stage more than 200 corrections at a time.**  Wait for the human
-to complete their review before continuing.
-
----
-
-## Step 5 — Human Reviews in Streamlit
-
-*(This section is for the human, not the agent — included for completeness.)*
-
-The human runs:
-
-```powershell
-streamlit run scripts/review_roots_app.py
-```
-
-This opens a browser with a table of all staged corrections showing:
-- Arabic word (RTL), location (sura:aya:position), normalized form
-- Current root (crossed out) → Suggested root (editable text input)
-- Reason and confidence level
-- Approve checkbox per row
-
-The human:
-1. Reviews each row
-2. Checks **✓** for corrections they agree with (editing the root if needed)
-3. Clicks **Approve selected** (moves to approved file) or **Reject selected** (removes)
-4. Repeats until the staging list is empty
-
----
-
-## Step 6 — Apply Approved Corrections
-
-After the human approves, run:
-
-```powershell
-# Preview first
-.venv\Scripts\python.exe scripts/review_roots_apply.py --dry-run
-
-# Then apply for real
-.venv\Scripts\python.exe scripts/review_roots_apply.py
-```
-
-Or the human can click **"Apply now"** in the Streamlit sidebar.
-
----
-
-## Step 7 — Repeat
-
-After corrections are applied, continue from where you left off:
+After processing every token in the current batch, immediately fetch the
+next one:
 
 ```powershell
 .venv\Scripts\python.exe scripts/review_roots_fetch.py --offset <next_offset> --limit 50
 ```
 
-Repeat steps 2–6 until all tokens have been reviewed.
+**Do not pause or wait for human review.**  Continue processing batches
+until `next_offset` is `null` (end of data).
+
+### Progress checkpoints
+
+After every 500 tokens processed, print a brief progress summary:
+
+```
+✓ Processed 500 tokens (offset 0–499), corrected 42 unique words (affecting 318 tokens total).
+  Continuing from offset 500…
+```
+
+This helps the human monitor progress if they are watching, but does NOT
+require them to take any action.
 
 ---
 
@@ -271,11 +301,11 @@ When a root correction is applied, these fields are updated:
 |-------------------|------------------------------|-------------------------------------------------|
 | `Token.root`      | e.g. "رحمن"                  | e.g. "رحم" (the corrected root)                |
 | `Token.root_id`   | FK to old Root row           | FK to new Root row (created if it didn't exist) |
-| `Token.status`    | Any status                   | `"verified"` (human-approved)                   |
+| `Token.status`    | Any status                   | `"verified"` (agent-verified)                   |
 | `Token.root_sources` | `{"alkhalil": "رحمن"}`    | `{"alkhalil": "رحمن", "agent_review": "رحم"}`  |
 | `Token.updated_at`| Previous timestamp           | Current timestamp (automatic)                   |
-| `Root.token_count` (old) | N                      | N - 1                                           |
-| `Root.token_count` (new) | M                      | M + 1 (Root row created if missing)             |
+| `Root.token_count` (old) | N                      | N - (number of updated tokens)                  |
+| `Root.token_count` (new) | M                      | M + (number of updated tokens)                  |
 
 ### Fields you do NOT need to update
 - `Token.text_ar` — original Arabic text, never changes
@@ -289,16 +319,31 @@ When a root correction is applied, these fields are updated:
 
 ---
 
+## Safety — Git LFS Database Snapshots
+
+The database (`quran.db`) is tracked via **Git LFS**.  Before starting a
+root correction session, create a snapshot so the human can roll back if
+anything goes wrong:
+
+```powershell
+git add quran.db
+git commit -m "DB snapshot before root review session"
+```
+
+To revert to a previous snapshot:
+
+```powershell
+git checkout HEAD~1 -- quran.db
+```
+
+---
+
 ## File Locations
 
 | File                              | Purpose                                           |
 |-----------------------------------|---------------------------------------------------|
 | `scripts/review_roots_fetch.py`   | Fetch token batches from DB                       |
-| `scripts/review_roots_stage.py`   | Stage a suspected-wrong root                      |
-| `scripts/review_roots_app.py`     | Streamlit GUI for human review                    |
-| `scripts/review_roots_apply.py`   | Apply approved corrections to DB                  |
-| `data/root_review_staging.json`   | Temporary: agent's staged corrections             |
-| `data/root_review_approved.json`  | Temporary: human-approved corrections             |
+| `scripts/review_roots_apply.py`   | Apply corrections to DB (single-token mode)       |
 | `data/root_review_applied_log.json` | Permanent: audit log of all applied corrections |
 
 ---
@@ -306,14 +351,13 @@ When a root correction is applied, these fields are updated:
 ## Quick-Start Checklist
 
 ```
-[ ] 1. Activate venv:  .venv\Scripts\Activate.ps1
-[ ] 2. Fetch batch:     .venv\Scripts\python.exe scripts/review_roots_fetch.py --offset 0 --limit 50
-[ ] 3. For each token with a wrong root, stage it:
-       .venv\Scripts\python.exe scripts/review_roots_stage.py --token-id <ID> --suggested-root "<root>" --reason "<why>" --confidence <level>
-[ ] 4. Check count:     .venv\Scripts\python.exe scripts/review_roots_stage.py --show
-[ ] 5. When count >= 200, tell the user to review:
-       streamlit run scripts/review_roots_app.py
-[ ] 6. After human review, apply:
-       .venv\Scripts\python.exe scripts/review_roots_apply.py
-[ ] 7. Continue from next offset, go to step 2
+[ ] 1. Activate venv:       .venv\Scripts\Activate.ps1
+[ ] 2. Snapshot DB:          git add quran.db; git commit -m "DB snapshot before review"
+[ ] 3. Fetch batch:          .venv\Scripts\python.exe scripts/review_roots_fetch.py --offset 0 --limit 50
+[ ] 4. For each unique normalized word with a wrong root:
+       - Determine the correct root (or use the word itself if no root exists)
+       - Apply the correction to ALL occurrences via bulk update (see Step 3b)
+[ ] 5. Fetch next batch (use next_offset), go to step 4
+[ ] 6. When next_offset is null, you are done — commit the final DB state:
+       git add quran.db; git commit -m "Root review complete"
 ```

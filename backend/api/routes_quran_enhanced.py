@@ -1,16 +1,17 @@
 """
 Core Qur'an data API routes with advanced filters and caching.
 
-This is the main API router, providing eight endpoints:
+This is the main API router, providing ten endpoints:
 
     GET   /quran/token/{id}        – Retrieve a single word token by ID
     GET   /quran/tokens            – Paginated list with sura/root/search filters
     GET   /quran/verse/{sura}/{aya} – Complete verse reconstructed from tokens
     GET   /quran/root/{root}       – All tokens sharing a given Arabic root
     GET   /quran/search?q=...      – Full-text search in Arabic text
+    GET   /quran/similar/{word}    – Find words within edit distance (D7)
     GET   /quran/stats             – Aggregate statistics (total tokens/verses/roots)
     PATCH /quran/token/{id}        – Update a token's root / status / interpretations
-    PATCH /quran/root/{root}       – Update a root's meaning / metadata
+    PATCH /quran/root/{root}       – Update a root's meaning / metadata / related_roots
 
 Each endpoint:
     1. Checks the Redis cache (if enabled)
@@ -30,6 +31,8 @@ from backend.api.schemas import (
     RootResponse,
     RootTokensResponse,
     RootUpdateRequest,
+    SimilarWordsResponse,
+    SimilarWordEntry,
     StatsResponse,
     TokenListResponse,
     TokenResponse,
@@ -43,6 +46,7 @@ from backend.logging_config import get_logger, log_cache_operation, log_request
 from backend.metrics import record_cache_operation, record_token_operation
 from backend.models import Token
 from backend.repositories.token_repository import TokenRepository
+from backend.services.morphology import levenshtein, normalize_arabic
 
 router = APIRouter(prefix="/quran", tags=["Quran"])
 logger = get_logger(__name__)
@@ -325,6 +329,104 @@ async def search_tokens(
     )
 
 
+# ── Similar-word comparison (D7) ─────────────────────────────────
+
+
+@router.get(
+    "/similar/{word}",
+    response_model=SimilarWordsResponse,
+    summary="Find similar words",
+    description=(
+        "Find words within a given Levenshtein edit distance of the query "
+        "word. Useful for comparing similar but not identical words across "
+        "the Qur'an."
+    ),
+)
+async def find_similar_words(
+    word: str = Path(..., min_length=1, max_length=50, description="Arabic word to compare"),
+    max_distance: int = Query(1, ge=1, le=3, description="Maximum edit distance (1-3)"),
+    limit: int = Query(50, ge=1, le=200, description="Maximum results"),
+    db: AsyncSession = Depends(get_db_session),
+) -> SimilarWordsResponse:
+    """
+    Find words whose normalized form is within *max_distance* edits
+    of the query word.
+
+    The endpoint normalizes the input (strips diacritics, normalizes
+    hamza) and compares against every distinct normalized form in the
+    database using Levenshtein distance. Results are sorted by distance
+    (closest first) and include:
+
+    - **normalized**: the matching word form
+    - **distance**: edit distance from the query
+    - **root**: the root if available
+    - **sample_text_ar**: an example with diacritics
+    - **count**: how many tokens share this normalized form
+    """
+    start_time = time.time()
+
+    query_normalized = normalize_arabic(word)
+
+    # Get distinct normalized forms from DB
+    distinct_forms = await token_repo.aget_distinct_normalized_forms(db, limit=10000)
+
+    # Compute Levenshtein distance for each form
+    matches: list[dict] = []
+    for form in distinct_forms:
+        dist = levenshtein(query_normalized, form)
+        if dist <= max_distance and dist > 0:  # Exclude exact match (distance 0)
+            matches.append({"normalized": form, "distance": dist})
+
+    # Sort by distance, then alphabetically
+    matches.sort(key=lambda m: (m["distance"], m["normalized"]))
+    matches = matches[:limit]
+
+    # Enrich results with root and sample info
+    from sqlalchemy import func, select
+
+    results: list[SimilarWordEntry] = []
+    for m in matches:
+        # Get count + a sample token for each matching form
+        count_stmt = (
+            select(func.count()).select_from(Token).where(Token.normalized == m["normalized"])
+        )
+        count_result = await db.execute(count_stmt)
+        count = count_result.scalar() or 0
+
+        sample_stmt = (
+            select(Token)
+            .where(Token.normalized == m["normalized"])
+            .limit(1)
+        )
+        sample_result = await db.execute(sample_stmt)
+        sample = sample_result.scalar_one_or_none()
+
+        results.append(SimilarWordEntry(
+            normalized=m["normalized"],
+            distance=m["distance"],
+            root=sample.root if sample else None,
+            sample_text_ar=sample.text_ar if sample else None,
+            count=count,
+        ))
+
+    duration_ms = (time.time() - start_time) * 1000
+    log_request(
+        logger,
+        "GET",
+        f"/quran/similar/{word}",
+        200,
+        duration_ms,
+        results=len(results),
+    )
+
+    return SimilarWordsResponse(
+        query=query_normalized,
+        max_distance=max_distance,
+        results=results,
+        total=len(results),
+    )
+
+
 @router.get(
     "/stats",
     response_model=StatsResponse,
@@ -491,6 +593,8 @@ async def update_root(
         updates["meaning"] = body.meaning
     if body.metadata_ is not None:
         updates["metadata_"] = body.metadata_
+    if body.related_roots is not None:
+        updates["related_roots"] = body.related_roots
 
     if updates:
         for key, value in updates.items():
@@ -511,4 +615,5 @@ async def update_root(
         meaning=root_obj.meaning,
         token_count=root_obj.token_count,
         metadata=root_obj.metadata_,
+        related_roots=root_obj.related_roots,
     )

@@ -5,6 +5,7 @@ python-dotenv==1.0.0
 
 # Database
 sqlalchemy==2.0.25
+alembic==1.17.1  # Schema migrations
 psycopg2-binary==2.9.9  # PostgreSQL
 aiosqlite==0.19.0  # SQLite async support
 asyncpg==0.29.0  # Async PostgreSQL driver

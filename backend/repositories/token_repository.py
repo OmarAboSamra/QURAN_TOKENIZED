@@ -422,3 +422,86 @@ class TokenRepository(BaseRepository[Token]):
             return result.scalar() or 0
         except Exception:
             return await self.acount_filtered(session, search=query)
+
+    # ── Similar-word queries (D7) ──────────────────────────────────
+
+    async def aget_similar_by_normalized(
+        self,
+        session: AsyncSession,
+        normalized: str,
+        limit: int = 50,
+    ) -> list[Token]:
+        """
+        Get tokens whose normalized form matches exactly.
+
+        This is the fast path — used to collect all surface forms of the
+        same underlying word (e.g. "الله" with various diacritics).
+        """
+        stmt = (
+            select(Token)
+            .where(Token.normalized == normalized)
+            .order_by(Token.sura, Token.aya, Token.position)
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def aget_by_pattern(
+        self,
+        session: AsyncSession,
+        pattern: str,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> list[Token]:
+        """Get tokens that share the same morphological pattern (وزن)."""
+        stmt = (
+            select(Token)
+            .where(Token.pattern == pattern)
+            .order_by(Token.sura, Token.aya, Token.position)
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def aget_distinct_normalized_forms(
+        self,
+        session: AsyncSession,
+        limit: int = 5000,
+    ) -> list[str]:
+        """
+        Return a sample of distinct normalized word forms.
+
+        Used by the Levenshtein similarity search to build a candidate
+        set without loading full Token rows.
+        """
+        stmt = (
+            select(func.distinct(Token.normalized))
+            .order_by(Token.normalized)
+            .limit(limit)
+        )
+        result = await session.execute(stmt)
+        return [row[0] for row in result.fetchall()]
+
+    async def aget_root_with_related(
+        self,
+        session: AsyncSession,
+        root_str: str,
+    ) -> tuple[Optional[Root], list[Root]]:
+        """
+        Get a Root and its related roots.
+
+        Returns (root_obj, list_of_related_Root_objects).
+        """
+        root_obj = await self.aget_root_by_name(session, root_str)
+        if not root_obj:
+            return None, []
+
+        related: list[Root] = []
+        if root_obj.related_roots:
+            for rr in root_obj.related_roots:
+                rr_obj = await self.aget_root_by_name(session, rr)
+                if rr_obj:
+                    related.append(rr_obj)
+
+        return root_obj, related

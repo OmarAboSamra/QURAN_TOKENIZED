@@ -22,6 +22,7 @@ class TokenResponse(BaseModel):
     root: Optional[str] = None
     root_id: Optional[int] = None
     verse_id: Optional[int] = None
+    pattern: Optional[str] = None
     status: str
     interpretations: Optional[dict] = None
 
@@ -86,6 +87,7 @@ class RootUpdateRequest(BaseModel):
 
     meaning: Optional[str] = Field(None, description="English meaning or definition")
     metadata_: Optional[dict] = Field(None, alias="metadata", description="Additional metadata (etymology, related roots, …)")
+    related_roots: Optional[list[str]] = Field(None, description="List of similar/related root strings")
 
     class Config:
         """Pydantic config."""
@@ -101,8 +103,28 @@ class RootResponse(BaseModel):
     meaning: Optional[str] = None
     token_count: int = 0
     metadata: Optional[dict] = Field(None)
+    related_roots: Optional[list[str]] = None
 
     class Config:
         """Pydantic config."""
 
         from_attributes = True
+
+
+class SimilarWordEntry(BaseModel):
+    """A single similar-word result with distance info."""
+
+    normalized: str
+    distance: int
+    root: Optional[str] = None
+    sample_text_ar: Optional[str] = None
+    count: int = 0
+
+
+class SimilarWordsResponse(BaseModel):
+    """Response model for GET /quran/similar/{word}."""
+
+    query: str
+    max_distance: int
+    results: list[SimilarWordEntry]
+    total: int

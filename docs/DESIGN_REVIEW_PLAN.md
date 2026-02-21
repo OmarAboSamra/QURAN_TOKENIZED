@@ -106,30 +106,34 @@
 
 ---
 
-## D7 · No "Similar Word" Comparison Feature (LOW)
+## ~~D7 · No "Similar Word" Comparison Feature (LOW)~~ ✅ DONE
+
+> **Implemented in commit `TBD`.** Added `tokens.pattern` column (morphological وزن), `roots.related_roots` JSON column, `GET /quran/similar/{word}` endpoint with Levenshtein distance search, and `backend/services/morphology.py` utility module.
 
 **Gap**: The core requirement mentions "comparing with similar but not identical words." The system groups by exact root but has no concept of morphological similarity, semantic proximity, or near-miss roots.
 
 **Requirement violated**: #2 — compare similar words.
 
 **Action**:
-- Add computed columns for morphological pattern (وزن) on Token.
-- Add a `related_roots` JSON field on Root for manually curated similar roots.
-- Consider adding Levenshtein distance search for normalized word forms.
+- ~~Add computed columns for morphological pattern (وزن) on Token.~~
+- ~~Add a `related_roots` JSON field on Root for manually curated similar roots.~~
+- ~~Consider adding Levenshtein distance search for normalized word forms.~~
 - (Long-term) Add word embeddings for semantic similarity.
 
 ---
 
-## D8 · Database Migration Strategy Missing (LOW)
+## ~~D8 · Database Migration Strategy Missing (LOW)~~ ✅ DONE
+
+> **Implemented in commit `TBD`.** Alembic configured with `render_as_batch=True` for SQLite compatibility, `env.py` reads DB URL from app config, initial migration generated and stamped. FTS5 virtual tables excluded from autogenerate.
 
 **Gap**: Schema changes are applied via `Base.metadata.create_all()` which only adds new tables/columns — it cannot rename, drop, or alter existing columns. There is no Alembic migration setup.
 
 **Requirement violated**: #5 — expandability requires safe schema evolution.
 
 **Action**:
-- Add Alembic with `alembic init` and configure for both SQLite and PostgreSQL.
-- Generate initial migration from current schema.
-- All future schema changes go through migration files.
+- ~~Add Alembic with `alembic init` and configure for both SQLite and PostgreSQL.~~
+- ~~Generate initial migration from current schema.~~
+- ~~All future schema changes go through migration files.~~
 
 ---
 

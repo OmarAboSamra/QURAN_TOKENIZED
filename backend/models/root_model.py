@@ -77,6 +77,13 @@ class Root(Base):
         comment="Additional metadata (etymology, related roots, etc.)",
     )
 
+    # Related / similar roots (D7) — manually curated or auto-generated
+    related_roots: Mapped[Optional[list]] = mapped_column(
+        JSONType,
+        nullable=True,
+        comment="JSON list of similar/related root strings, e.g. ['\u0633\u0645\u0648', '\u0627\u0633\u0645']",
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

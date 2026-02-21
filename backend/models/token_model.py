@@ -109,6 +109,15 @@ class Token(Base):
         comment="JSON object mapping source name to extracted root",
     )
 
+    # Morphological pattern (وزن) — e.g. فَعَلَ, أَفْعَلَ, مَفْعِل
+    # Computed during tokenization or root extraction.
+    pattern: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+        comment="Morphological pattern (وزن) of the word, e.g. فعل, افعل",
+    )
+
     # Status tracking
     status: Mapped[str] = mapped_column(
         String(20),

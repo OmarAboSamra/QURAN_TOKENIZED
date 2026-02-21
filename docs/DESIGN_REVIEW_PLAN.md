@@ -14,56 +14,64 @@
 
 ---
 
-## D1 · No ORM Relationships Between Models (HIGH)
+## ~~D1 · No ORM Relationships Between Models (HIGH)~~ ✅ DONE
+
+> **Implemented in commit `c42c63c`.** Token.root_id FK → roots.id, Token.verse_id FK → verses.id, bidirectional relationships on all three models, selectinload in repository queries.
 
 **Gap**: Token, Root, and Verse are isolated ORM models with no SQLAlchemy `relationship()` links. Querying "all tokens for a root" requires filtering on the `Token.root` string column, and there is no FK constraint ensuring referential integrity.
 
 **Requirement violated**: #1, #2, #3 — comparing words by root requires fast JOINs.
 
 **Action**:
-- Add `root_id` FK column to Token referencing `roots.id`.
-- Add `sura`/`aya` FK columns to Token or a join table to Verse.
-- Define SQLAlchemy `relationship()` on Token, Root, and Verse.
-- Update repositories and routes to use eager-loading (`selectinload`) instead of multiple queries.
+- ~~Add `root_id` FK column to Token referencing `roots.id`.~~
+- ~~Add `sura`/`aya` FK columns to Token or a join table to Verse.~~
+- ~~Define SQLAlchemy `relationship()` on Token, Root, and Verse.~~
+- ~~Update repositories and routes to use eager-loading (`selectinload`) instead of multiple queries.~~
 
 ---
 
-## D2 · Root.token_ids JSON Column Does Not Scale (HIGH)
+## ~~D2 · Root.token_ids JSON Column Does Not Scale (HIGH)~~ ✅ DONE
+
+> **Implemented in commit `c42c63c`.** Column renamed to `tokens_legacy`, new code uses ORM relationship. `Root.tokens` relationship replaces JSON list.
 
 **Gap**: `Root.token_ids` stores a flat JSON list of token IDs. For common roots (e.g. ك ت ب) with 1000+ tokens, this column becomes huge, slow to query, and impossible to index.
 
 **Requirement violated**: #3 — "fast and huge database."
 
 **Action**:
-- Remove `Root.token_ids` entirely once the FK relationship (D1) is in place.
-- Rely on `SELECT * FROM tokens WHERE root_id = ?` instead.
+- ~~Remove `Root.token_ids` entirely once the FK relationship (D1) is in place.~~
+- ~~Rely on `SELECT * FROM tokens WHERE root_id = ?` instead.~~
 - Keep `Root.token_count` as a denormalized counter (update via trigger or application logic).
 
 ---
 
-## D3 · Verse Table Is Never Populated (MEDIUM)
+## ~~D3 · Verse Table Is Never Populated (MEDIUM)~~ ✅ DONE
+
+> **Implemented in commit `c42c63c`.** Verse table populated (6,236 rows) via migration script and tokenize_quran.py. Verse endpoint reads from Verse table with token fallback.
 
 **Gap**: The `Verse` model exists with proper columns but no code (service, script, or task) ever inserts rows into it. The API reconstructs verse text by joining Token rows (`" ".join(t.text_ar for t in tokens)`).
 
 **Requirement violated**: #5 — expandability for verse-level annotations (translations, tafsir).
 
 **Action**:
-- Populate the Verse table during tokenization (one INSERT per verse).
-- Add a `verses ↔ tokens` relationship so `verse.tokens` is a lazy-loaded collection.
+- ~~Populate the Verse table during tokenization (one INSERT per verse).~~
+- ~~Add a `verses ↔ tokens` relationship so `verse.tokens` is a lazy-loaded collection.~~
 - Use the Verse table for future translations and tafsir references stored in `metadata_`.
 
 ---
 
-## D4 · Token.references JSON Is Redundant (MEDIUM)
+## ~~D4 · Token.references JSON Is Redundant (MEDIUM)~~ ✅ DONE
+
+> **Implemented in commit `c42c63c`.** Column marked DEPRECATED, removed from API schema. index_references.py now sets root_id FK. Column kept for backward compat.
 
 **Gap**: `Token.references` stores a JSON array of related token IDs. With proper FK relationships (D1), this information is derivable via `SELECT id FROM tokens WHERE root_id = ?` — no need to denormalize into every row.
 
 **Requirement violated**: #4 — manual updates require recalculating references when a root is corrected.
 
 **Action**:
-- Deprecate `Token.references` once D1 is implemented.
-- Provide a `/quran/root/{root}` endpoint that queries dynamically (already exists).
-- Optionally keep as a materialized cache that is rebuilt by `index_references.py`.
+- ~~Deprecate `Token.references` once D1 is implemented.~~
+- ~~Provide a `/quran/root/{root}` endpoint that queries dynamically (already exists).~~
+- ~~Optionally keep as a materialized cache that is rebuilt by `index_references.py`.~~
 
 ---
 

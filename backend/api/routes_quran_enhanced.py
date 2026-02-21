@@ -1,35 +1,43 @@
 """
 Core Qur'an data API routes with advanced filters and caching.
 
-This is the main API router, providing six endpoints:
+This is the main API router, providing eight endpoints:
 
-    GET /quran/token/{id}        – Retrieve a single word token by ID
-    GET /quran/tokens            – Paginated list with sura/root/search filters
-    GET /quran/verse/{sura}/{aya} – Complete verse reconstructed from tokens
-    GET /quran/root/{root}       – All tokens sharing a given Arabic root
-    GET /quran/search?q=...      – Full-text search in Arabic text
-    GET /quran/stats              – Aggregate statistics (total tokens/verses/roots)
+    GET   /quran/token/{id}        – Retrieve a single word token by ID
+    GET   /quran/tokens            – Paginated list with sura/root/search filters
+    GET   /quran/verse/{sura}/{aya} – Complete verse reconstructed from tokens
+    GET   /quran/root/{root}       – All tokens sharing a given Arabic root
+    GET   /quran/search?q=...      – Full-text search in Arabic text
+    GET   /quran/stats             – Aggregate statistics (total tokens/verses/roots)
+    PATCH /quran/token/{id}        – Update a token's root / status / interpretations
+    PATCH /quran/root/{root}       – Update a root's meaning / metadata
 
 Each endpoint:
     1. Checks the Redis cache (if enabled)
     2. Queries the database via TokenRepository
     3. Logs the request and records Prometheus metrics
     4. Returns a Pydantic response model
+
+PATCH endpoints require the X-API-Key header when ADMIN_API_KEY is set.
 """
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.schemas import (
+    RootResponse,
     RootTokensResponse,
+    RootUpdateRequest,
     StatsResponse,
     TokenListResponse,
     TokenResponse,
+    TokenUpdateRequest,
     VerseResponse,
 )
 from backend.cache import get_cache
+from backend.config import get_settings
 from backend.db import get_db_session
 from backend.logging_config import get_logger, log_cache_operation, log_request
 from backend.metrics import record_cache_operation, record_token_operation
@@ -40,6 +48,24 @@ router = APIRouter(prefix="/quran", tags=["Quran"])
 logger = get_logger(__name__)
 cache = get_cache()
 token_repo = TokenRepository()
+settings = get_settings()
+
+
+# ── Auth dependency ───────────────────────────────────────────────
+
+async def require_admin(x_api_key: Optional[str] = Header(None)) -> None:
+    """
+    Validate the X-API-Key header for write endpoints.
+
+    When ADMIN_API_KEY is empty (default), auth is disabled — any caller
+    can use the PATCH endpoints. Set the env var to lock them down.
+    """
+    key = settings.admin_api_key
+    if key and x_api_key != key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing X-API-Key header",
+        )
 
 
 # Endpoints
@@ -268,12 +294,16 @@ async def search_tokens(
     page_size: int = Query(50, ge=1, le=1000, description="Items per page"),
     db: AsyncSession = Depends(get_db_session),
 ) -> TokenListResponse:
-    """Search for tokens containing the specified Arabic text."""
+    """Search for tokens containing the specified Arabic text.
+
+    Uses the FTS5 full-text index when available for fast ranked search,
+    with automatic fallback to LIKE for databases without FTS5.
+    """
     start_time = time.time()
     skip = (page - 1) * page_size
 
-    tokens = await token_repo.asearch(db, q, skip, page_size)
-    total = await token_repo.acount_filtered(db, search=q)
+    tokens = await token_repo.asearch_fts(db, q, skip, page_size)
+    total = await token_repo.acount_fts(db, q)
 
     duration_ms = (time.time() - start_time) * 1000
     log_request(
@@ -363,4 +393,122 @@ async def get_stats(
         total_verses=total_verses,
         total_roots=total_roots,
         suras=114,
+    )
+
+
+# ── PATCH endpoints (D5: manual corrections) ─────────────────────
+
+
+@router.patch(
+    "/token/{token_id}",
+    response_model=TokenResponse,
+    summary="Update token",
+    description="Correct a token's root, status, or interpretations. Requires X-API-Key when ADMIN_API_KEY is set.",
+    dependencies=[Depends(require_admin)],
+)
+async def update_token(
+    token_id: int,
+    body: TokenUpdateRequest,
+    db: AsyncSession = Depends(get_db_session),
+) -> TokenResponse:
+    """
+    Update a token's root, status, and/or interpretations.
+
+    If the root is changed the token's root_id FK is re-linked to the
+    correct Root row (created on the fly if needed), and the old/new
+    Root.token_count counters are adjusted. Related cache keys are
+    invalidated.
+    """
+    start_time = time.time()
+
+    token = await token_repo.aget_by_id(db, token_id)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Token {token_id} not found",
+        )
+
+    old_root = token.root
+
+    # Apply root change (with FK re-link)
+    if body.root is not None and body.root != token.root:
+        token = await token_repo.aupdate_token_root(db, token, body.root)
+
+    # Apply other fields
+    updates: dict = {}
+    if body.status is not None:
+        updates["status"] = body.status
+    if body.interpretations is not None:
+        updates["interpretations"] = body.interpretations
+    if updates:
+        token = await token_repo.aupdate(db, token, **updates)
+
+    await db.commit()
+
+    # Invalidate cache for the affected verse and root(s)
+    await cache.invalidate_verse(token.sura, token.aya)
+    if old_root:
+        await cache.delete_pattern(f"tokens_root:{old_root}:*")
+    if body.root and body.root != old_root:
+        await cache.delete_pattern(f"tokens_root:{body.root}:*")
+
+    duration_ms = (time.time() - start_time) * 1000
+    log_request(logger, "PATCH", f"/quran/token/{token_id}", 200, duration_ms)
+    record_token_operation("update_token", "success")
+
+    return TokenResponse.model_validate(token)
+
+
+@router.patch(
+    "/root/{root}",
+    response_model=RootResponse,
+    summary="Update root",
+    description="Update a root's meaning or metadata. Requires X-API-Key when ADMIN_API_KEY is set.",
+    dependencies=[Depends(require_admin)],
+)
+async def update_root(
+    root: str = Path(..., min_length=1, max_length=50, description="Arabic root"),
+    body: RootUpdateRequest = ...,
+    db: AsyncSession = Depends(get_db_session),
+) -> RootResponse:
+    """
+    Update a root's meaning and/or metadata.
+
+    The root row must already exist (created during root extraction or
+    when a token's root is corrected via PATCH /quran/token/{id}).
+    """
+    start_time = time.time()
+
+    root_obj = await token_repo.aget_root_by_name(db, root)
+    if not root_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Root '{root}' not found",
+        )
+
+    updates: dict = {}
+    if body.meaning is not None:
+        updates["meaning"] = body.meaning
+    if body.metadata_ is not None:
+        updates["metadata_"] = body.metadata_
+
+    if updates:
+        for key, value in updates.items():
+            setattr(root_obj, key, value)
+        await db.flush()
+
+    await db.commit()
+
+    # Invalidate cached token lists for this root
+    await cache.delete_pattern(f"tokens_root:{root}:*")
+
+    duration_ms = (time.time() - start_time) * 1000
+    log_request(logger, "PATCH", f"/quran/root/{root}", 200, duration_ms)
+
+    return RootResponse(
+        id=root_obj.id,
+        root=root_obj.root,
+        meaning=root_obj.meaning,
+        token_count=root_obj.token_count,
+        metadata=root_obj.metadata_,
     )

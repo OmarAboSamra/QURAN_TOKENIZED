@@ -11,10 +11,11 @@ Async methods are used by FastAPI route handlers.
 """
 from typing import Optional
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, selectinload
 
+from backend.models.root_model import Root
 from backend.models.token_model import Token, TokenStatus
 from backend.models.verse_model import Verse
 from backend.repositories.base import BaseRepository
@@ -322,3 +323,102 @@ class TokenRepository(BaseRepository[Token]):
         )
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    # ── Root-aware queries ─────────────────────────────────────────
+
+    async def aget_root_by_name(
+        self,
+        session: AsyncSession,
+        root_str: str,
+    ) -> Optional[Root]:
+        """Get a Root row by its root string."""
+        stmt = select(Root).where(Root.root == root_str)
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def aupdate_token_root(
+        self,
+        session: AsyncSession,
+        token: Token,
+        new_root: str,
+    ) -> Token:
+        """
+        Update a token's root and re-link its root_id FK.
+
+        If the Root row for *new_root* doesn't exist it is created.
+        Token counts on old and new Root rows are adjusted.
+        """
+        old_root_str = token.root
+
+        # Find or create the new Root row
+        new_root_obj = await self.aget_root_by_name(session, new_root)
+        if not new_root_obj:
+            new_root_obj = Root(root=new_root, token_count=0, token_ids=[])
+            session.add(new_root_obj)
+            await session.flush()
+
+        token.root = new_root
+        token.root_id = new_root_obj.id
+        new_root_obj.token_count = (new_root_obj.token_count or 0) + 1
+
+        # Decrement old root's counter
+        if old_root_str:
+            old_root_obj = await self.aget_root_by_name(session, old_root_str)
+            if old_root_obj and old_root_obj.token_count and old_root_obj.token_count > 0:
+                old_root_obj.token_count -= 1
+
+        await session.flush()
+        return token
+
+    # ── FTS5 search ────────────────────────────────────────────────
+
+    async def asearch_fts(
+        self,
+        session: AsyncSession,
+        query: str,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[Token]:
+        """
+        Search tokens using FTS5 full-text index (fast).
+
+        Falls back to LIKE if the FTS5 table doesn't exist.
+        """
+        try:
+            # FTS5 match query — returns rowids matching the query
+            fts_stmt = text(
+                "SELECT rowid FROM tokens_fts WHERE tokens_fts MATCH :q "
+                "ORDER BY rank LIMIT :lim OFFSET :off"
+            )
+            result = await session.execute(
+                fts_stmt, {"q": query, "lim": limit, "off": skip}
+            )
+            rowids = [row[0] for row in result.fetchall()]
+            if not rowids:
+                return []
+            # Fetch full Token rows by the matched IDs
+            stmt = (
+                select(Token)
+                .where(Token.id.in_(rowids))
+                .order_by(Token.sura, Token.aya, Token.position)
+            )
+            token_result = await session.execute(stmt)
+            return list(token_result.scalars().all())
+        except Exception:
+            # FTS5 table missing or query syntax error → fall back to LIKE
+            return await self.asearch(session, query, skip, limit)
+
+    async def acount_fts(
+        self,
+        session: AsyncSession,
+        query: str,
+    ) -> int:
+        """Count FTS5 matches, falling back to LIKE count."""
+        try:
+            fts_count = text(
+                "SELECT count(*) FROM tokens_fts WHERE tokens_fts MATCH :q"
+            )
+            result = await session.execute(fts_count, {"q": query})
+            return result.scalar() or 0
+        except Exception:
+            return await self.acount_filtered(session, search=query)

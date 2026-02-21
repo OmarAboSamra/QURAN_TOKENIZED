@@ -31,7 +31,49 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.api import routes_meta, routes_quran_enhanced, routes_pipeline
 from backend.config import get_settings
-from backend.db import init_db_async
+from backend.db import get_async_engine, init_db_async
+
+
+async def _ensure_fts5() -> None:
+    """
+    Create the FTS5 virtual table and sync triggers if they don't exist.
+
+    This is a no-op when they already exist thanks to IF NOT EXISTS.
+    Called once during startup for SQLite databases.
+    """
+    from sqlalchemy import text
+
+    engine = get_async_engine()
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS tokens_fts "
+            "USING fts5(text_ar, normalized, content='tokens', "
+            "content_rowid='id', tokenize='unicode61')"
+        ))
+        await conn.execute(text(
+            "CREATE TRIGGER IF NOT EXISTS tokens_fts_insert "
+            "AFTER INSERT ON tokens BEGIN "
+            "INSERT INTO tokens_fts(rowid, text_ar, normalized) "
+            "VALUES (new.id, new.text_ar, new.normalized); END;"
+        ))
+        await conn.execute(text(
+            "CREATE TRIGGER IF NOT EXISTS tokens_fts_delete "
+            "AFTER DELETE ON tokens BEGIN "
+            "INSERT INTO tokens_fts(tokens_fts, rowid, text_ar, normalized) "
+            "VALUES ('delete', old.id, old.text_ar, old.normalized); END;"
+        ))
+        await conn.execute(text(
+            "CREATE TRIGGER IF NOT EXISTS tokens_fts_update "
+            "AFTER UPDATE ON tokens BEGIN "
+            "INSERT INTO tokens_fts(tokens_fts, rowid, text_ar, normalized) "
+            "VALUES ('delete', old.id, old.text_ar, old.normalized); "
+            "INSERT INTO tokens_fts(rowid, text_ar, normalized) "
+            "VALUES (new.id, new.text_ar, new.normalized); END;"
+        ))
+        # Rebuild to ensure index is populated from existing data
+        await conn.execute(text(
+            "INSERT INTO tokens_fts(tokens_fts) VALUES('rebuild')"
+        ))
 
 
 @asynccontextmanager
@@ -59,6 +101,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         print("[OK] Database initialized")
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
+
+    # Create FTS5 full-text index if it doesn't exist (SQLite only)
+    if settings.is_sqlite:
+        try:
+            await _ensure_fts5()
+            print("[OK] FTS5 search index ready")
+        except Exception as e:
+            print(f"Warning: FTS5 setup skipped: {e}")
     
     print(f"[OK] Server starting on http://{settings.api_host}:{settings.api_port}")
     print("=" * 60)

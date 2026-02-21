@@ -148,6 +148,14 @@ class Settings(BaseSettings):
         description="Sentry DSN for error tracking",
     )
 
+    # ── Admin API Key ─────────────────────────────────────────────
+    # Required for PATCH endpoints (token/root corrections).
+    # Set via ADMIN_API_KEY env var. Empty string disables auth.
+    admin_api_key: str = Field(
+        default="",
+        description="API key for admin PATCH endpoints (empty = auth disabled)",
+    )
+
     # ── Rate Limiting (optional) ──────────────────────────────────
     rate_limit_enabled: bool = Field(
         default=False,

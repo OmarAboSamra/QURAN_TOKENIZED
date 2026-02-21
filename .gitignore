@@ -37,10 +37,10 @@ ENV/
 .env
 .env.local
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Database — tracked via Git LFS (see .gitattributes)
+# *.db    — removed: now in LFS
+# *.sqlite — removed: now in LFS
+# *.sqlite3 — removed: now in LFS
 
 # Data files (except samples)
 data/*.csv

@@ -38,5 +38,8 @@ isort==5.13.2
 flake8==7.0.0
 mypy==1.8.0
 
+# Review UI
+streamlit>=1.30.0
+
 # Utilities
 python-multipart==0.0.6
